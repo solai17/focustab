@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "FocusTab - Life, Goals & Wisdom",
+  "version": "1.0.0",
+  "description": "Transform every new tab into a reminder of what matters. AI-curated wisdom from your newsletters + mortality awareness.",
+  "permissions": [
+    "storage"
+  ],
+  "chrome_url_overrides": {
+    "newtab": "index.html"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png"
+    },
+    "default_title": "FocusTab Settings"
+  }
+}

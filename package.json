@@ -1,0 +1,40 @@
+{
+  "name": "focustab",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Transform every new tab into a reminder of what matters",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run icons && tsc -b && vite build && npm run copy-manifest",
+    "build:extension": "npm run build",
+    "icons": "node scripts/generate-icons.js",
+    "copy-manifest": "cp public/manifest.json dist/",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "lucide-react": "^0.555.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/chrome": "^0.0.315",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.5",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "autoprefixer": "^10.4.22",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.5.0",
+    "postcss": "^8.5.6",
+    "sharp": "^0.34.5",
+    "tailwindcss": "^3.4.18",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.4",
+    "vite": "^7.2.4"
+  }
+}
