@@ -1,0 +1,76 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  passwordHash    String
+  name            String
+  birthDate       DateTime
+  lifeExpectancy  Int       @default(80)
+  inboxEmail      String    @unique // e.g., user-abc123@focustab.app
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  newsletters     Newsletter[]
+  inspirations    Inspiration[]
+
+  @@map("users")
+}
+
+model Newsletter {
+  id              String    @id @default(uuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  senderEmail     String
+  senderName      String?
+  subject         String
+  rawContent      String    // Original HTML
+  textContent     String    // Extracted plain text
+  
+  // Processed content
+  summary         String?
+  keyInsight      String?
+  readTimeMinutes Int?
+  isProcessed     Boolean   @default(false)
+  isRead          Boolean   @default(false)
+  
+  receivedAt      DateTime  @default(now())
+  processedAt     DateTime?
+  
+  inspirations    Inspiration[]
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("newsletters")
+}
+
+model Inspiration {
+  id              String    @id @default(uuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  newsletterId    String?
+  newsletter      Newsletter? @relation(fields: [newsletterId], references: [id], onDelete: SetNull)
+  
+  quote           String
+  author          String?
+  source          String    // Newsletter name or source
+  category        String    @default("wisdom") // wisdom, motivation, reflection
+  
+  shownCount      Int       @default(0)
+  lastShownAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([userId])
+  @@map("inspirations")
+}
