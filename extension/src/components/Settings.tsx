@@ -1,4 +1,4 @@
-import { X, User, Calendar, Mail, Copy, Check, Trash2 } from 'lucide-react';
+import { X, User, Calendar, Mail, Copy, Check, Trash2, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import type { UserProfile } from '../types';
 
@@ -13,6 +13,9 @@ export function Settings({ profile, onClose, onUpdate, onReset }: SettingsProps)
   const [name, setName] = useState(profile.name);
   const [birthDate, setBirthDate] = useState(profile.birthDate);
   const [lifeExpectancy, setLifeExpectancy] = useState(profile.lifeExpectancy);
+  const [enableRecommendations, setEnableRecommendations] = useState(
+    profile.enableRecommendations ?? true
+  );
   const [copied, setCopied] = useState(false);
   const [showConfirmReset, setShowConfirmReset] = useState(false);
 
@@ -22,6 +25,7 @@ export function Settings({ profile, onClose, onUpdate, onReset }: SettingsProps)
       name,
       birthDate,
       lifeExpectancy,
+      enableRecommendations,
     });
     onClose();
   };
@@ -41,9 +45,9 @@ export function Settings({ profile, onClose, onUpdate, onReset }: SettingsProps)
 
   return (
     <div className="fixed inset-0 bg-void/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-      <div className="w-full max-w-md bg-obsidian border border-ash rounded-2xl shadow-2xl animate-slide-up">
+      <div className="w-full max-w-md bg-obsidian border border-ash rounded-2xl shadow-2xl animate-slide-up max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-ash">
+        <div className="flex items-center justify-between p-6 border-b border-ash sticky top-0 bg-obsidian z-10">
           <h2 className="font-display text-xl text-pearl">Settings</h2>
           <button
             onClick={onClose}
@@ -104,6 +108,38 @@ export function Settings({ profile, onClose, onUpdate, onReset }: SettingsProps)
             </div>
           </div>
 
+          {/* Recommendations Toggle */}
+          <div className="pt-2">
+            <label className="flex items-center gap-2 text-sm text-smoke mb-3">
+              <Sparkles className="w-4 h-4" />
+              Content Discovery
+            </label>
+            <div className="flex items-start gap-4 p-4 bg-slate border border-ash rounded-lg">
+              <button
+                onClick={() => setEnableRecommendations(!enableRecommendations)}
+                className={`w-11 h-6 rounded-full transition-all flex items-center px-0.5 flex-shrink-0 ${
+                  enableRecommendations ? 'bg-life' : 'bg-ash'
+                }`}
+              >
+                <div
+                  className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${
+                    enableRecommendations ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+              <div className="flex-1">
+                <h3 className="text-pearl text-sm font-medium mb-1">
+                  Enable Recommendations
+                </h3>
+                <p className="text-xs text-smoke leading-relaxed">
+                  {enableRecommendations
+                    ? "You'll see popular content from newsletters you don't follow yet."
+                    : "You'll only see content from newsletters you've forwarded."}
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* Inbox Email */}
           {profile.inboxEmail && (
             <div>
@@ -160,7 +196,7 @@ export function Settings({ profile, onClose, onUpdate, onReset }: SettingsProps)
         </div>
 
         {/* Footer */}
-        <div className="flex gap-3 p-6 border-t border-ash">
+        <div className="flex gap-3 p-6 border-t border-ash sticky bottom-0 bg-obsidian">
           <button
             onClick={onClose}
             className="flex-1 py-2.5 px-4 text-smoke hover:text-pearl border border-ash rounded-lg hover:border-smoke transition-all"
@@ -178,3 +214,5 @@ export function Settings({ profile, onClose, onUpdate, onReset }: SettingsProps)
     </div>
   );
 }
+
+export default Settings;

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowRight, Calendar, User, Mail, Copy, Check } from 'lucide-react';
+import { ArrowRight, Calendar, User, Mail, Copy, Check, Sparkles } from 'lucide-react';
 import type { UserProfile } from '../types';
 import { generateInboxEmail } from '../utils/storage';
 
@@ -12,6 +12,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
   const [name, setName] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [inboxEmail, setInboxEmail] = useState('');
+  const [enableRecommendations, setEnableRecommendations] = useState(true);
   const [copied, setCopied] = useState(false);
 
   const handleNameSubmit = (e: React.FormEvent) => {
@@ -30,12 +31,17 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     }
   };
 
+  const handleRecommendationsSubmit = () => {
+    setStep(4);
+  };
+
   const handleComplete = () => {
     const profile: UserProfile = {
       name: name.trim(),
       birthDate,
       lifeExpectancy: 80,
       inboxEmail,
+      enableRecommendations,
       createdAt: new Date().toISOString(),
     };
     onComplete(profile);
@@ -114,15 +120,77 @@ export function Onboarding({ onComplete }: OnboardingProps) {
           </form>
         )}
 
-        {/* Step 3: Inbox Email */}
+        {/* Step 3: Recommendations Toggle */}
         {step === 3 && (
+          <div className="animate-slide-up">
+            <div className="mb-8">
+              <div className="flex items-center gap-2 text-sm text-smoke mb-4">
+                <Sparkles className="w-4 h-4" />
+                Discover new content
+              </div>
+
+              <div className="p-6 bg-slate border border-ash rounded-xl mb-4">
+                <div className="flex items-start gap-4">
+                  <button
+                    onClick={() => setEnableRecommendations(!enableRecommendations)}
+                    className={`w-12 h-7 rounded-full transition-all flex items-center px-1 flex-shrink-0 ${
+                      enableRecommendations ? 'bg-life' : 'bg-ash'
+                    }`}
+                  >
+                    <div
+                      className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${
+                        enableRecommendations ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                  <div>
+                    <h3 className="text-pearl font-medium mb-1">
+                      Enable Recommendations
+                    </h3>
+                    <p className="text-sm text-smoke leading-relaxed">
+                      Discover popular content from newsletters you don't follow yet.
+                      We'll show you what's resonating with the community.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3 text-sm text-smoke">
+                <p>
+                  {enableRecommendations ? (
+                    <>
+                      <span className="text-life">Great choice!</span> You'll see a mix of content
+                      from your newsletters and popular bytes from the community.
+                    </>
+                  ) : (
+                    <>
+                      No problem! You'll only see content from newsletters you forward.
+                      You can enable this anytime in settings.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={handleRecommendationsSubmit}
+              className="w-full py-3 px-4 bg-life text-void font-medium rounded-xl flex items-center justify-center gap-2 hover:bg-life/90 transition-all"
+            >
+              Continue
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Step 4: Inbox Email */}
+        {step === 4 && (
           <div className="animate-slide-up">
             <div className="mb-8">
               <div className="flex items-center gap-2 text-sm text-smoke mb-3">
                 <Mail className="w-4 h-4" />
                 Your personal newsletter inbox
               </div>
-              
+
               <div className="p-4 bg-slate border border-ash rounded-xl mb-3">
                 <div className="flex items-center justify-between gap-3">
                   <code className="text-life text-sm break-all">{inboxEmail}</code>
@@ -141,11 +209,17 @@ export function Onboarding({ onComplete }: OnboardingProps) {
 
               <div className="space-y-3 text-sm text-smoke">
                 <p>
-                  <span className="text-pearl font-medium">Forward your newsletters</span> to this address.
-                  We'll extract wisdom and reading recommendations from them.
+                  <span className="text-pearl font-medium">Forward your newsletters</span> to this
+                  address. We'll extract bite-sized wisdom from them.
                 </p>
+                {enableRecommendations && (
+                  <p className="text-xs text-smoke/60">
+                    While you wait for your newsletters, you'll see popular content from the community.
+                  </p>
+                )}
                 <p className="text-xs text-smoke/60">
-                  Note: In this demo version, we use sample content. The full version will process real emails.
+                  Note: In this demo version, we use sample content. The full version will process
+                  real emails.
                 </p>
               </div>
             </div>
@@ -162,7 +236,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
 
         {/* Progress dots */}
         <div className="flex justify-center gap-2 mt-8">
-          {[1, 2, 3].map((s) => (
+          {[1, 2, 3, 4].map((s) => (
             <div
               key={s}
               className={`w-2 h-2 rounded-full transition-all ${
@@ -175,3 +249,5 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     </div>
   );
 }
+
+export default Onboarding;

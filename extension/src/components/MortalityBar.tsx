@@ -6,48 +6,77 @@ interface MortalityBarProps {
   percentLived: number;
 }
 
+// Contextual messages that connect mortality to content
+const CONTEXT_MESSAGES = [
+  "Make this moment count.",
+  "What will you learn today?",
+  "Time well spent starts now.",
+  "Every moment is a choice.",
+  "Wisdom awaits below.",
+  "Feed your mind wisely.",
+  "What matters to you today?",
+  "Your attention is precious.",
+];
+
 export function MortalityBar({ name, sundaysRemaining, percentLived }: MortalityBarProps) {
   const firstName = useMemo(() => name.split(' ')[0], [name]);
-  
+
+  // Pick a consistent message based on the day
+  const contextMessage = useMemo(() => {
+    const dayIndex = new Date().getDay();
+    return CONTEXT_MESSAGES[dayIndex % CONTEXT_MESSAGES.length];
+  }, []);
+
+  // Format the number with commas
+  const formattedSundays = sundaysRemaining.toLocaleString();
+
   return (
-    <div className="opacity-0 animate-fade-in">
-      <div className="text-center mb-6">
-        <h1 className="font-display text-3xl md:text-4xl font-medium text-pearl mb-2">
-          You have{' '}
-          <span className="text-life font-semibold">
-            {sundaysRemaining.toLocaleString()}
-          </span>
-          {' '}Sundays left
-          {firstName && <span className="text-smoke">, {firstName}</span>}
+    <div className="opacity-0 animate-fade-in text-center">
+      {/* Main Message */}
+      <div className="mb-6">
+        <h1 className="font-display text-3xl md:text-4xl font-medium text-pearl mb-1">
+          {firstName ? (
+            <>
+              {firstName}, you have{' '}
+              <span className="text-life font-semibold">{formattedSundays}</span>
+              {' '}Sundays remaining.
+            </>
+          ) : (
+            <>
+              You have{' '}
+              <span className="text-life font-semibold">{formattedSundays}</span>
+              {' '}Sundays remaining.
+            </>
+          )}
         </h1>
-        <p className="text-smoke text-sm font-mono">
-          {percentLived.toFixed(1)}% of your journey complete
-        </p>
-      </div>
-      
-      {/* Progress bar container */}
-      <div className="relative w-full max-w-2xl mx-auto">
-        {/* Background track */}
-        <div className="h-3 bg-ash rounded-full overflow-hidden">
-          {/* Filled portion */}
-          <div
-            className="h-full bg-gradient-to-r from-life-dim via-life to-life rounded-full life-bar-fill relative"
-            style={{ width: `${percentLived}%` }}
-          >
-            {/* Shimmer effect */}
-            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-pulse-slow" />
+
+        {/* Progress Bar - Compact inline version */}
+        <div className="flex items-center justify-center gap-3 mt-3">
+          <div className="w-32 h-1.5 bg-ash rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-life-dim to-life rounded-full life-bar-fill"
+              style={{ width: `${percentLived}%` }}
+            />
           </div>
+          <span className="text-smoke text-sm font-mono">
+            {percentLived.toFixed(0)}% lived
+          </span>
         </div>
-        
-        {/* Markers */}
-        <div className="flex justify-between mt-2 text-xs text-smoke/60 font-mono">
-          <span>Birth</span>
-          <span>25</span>
-          <span>50</span>
-          <span>75</span>
-          <span>∞</span>
-        </div>
+      </div>
+
+      {/* Contextual Bridge Message */}
+      <p className="text-smoke/70 text-lg font-light tracking-wide mb-8 animate-fade-in animation-delay-200">
+        {contextMessage}
+      </p>
+
+      {/* Decorative Divider */}
+      <div className="flex items-center justify-center gap-4 mb-8">
+        <div className="w-12 h-px bg-gradient-to-r from-transparent to-ash" />
+        <div className="w-1.5 h-1.5 rounded-full bg-life/50" />
+        <div className="w-12 h-px bg-gradient-to-l from-transparent to-ash" />
       </div>
     </div>
   );
 }
+
+export default MortalityBar;

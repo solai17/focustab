@@ -10,6 +10,8 @@ dotenv.config();
 import authRoutes from './routes/auth';
 import contentRoutes from './routes/content';
 import webhookRoutes from './routes/webhooks';
+import feedRoutes from './routes/feed';
+import discoverRoutes from './routes/discover';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -62,6 +64,8 @@ app.get('/health', (req, res) => {
 app.use('/auth', authRoutes);
 app.use('/content', contentRoutes);
 app.use('/webhooks', webhookRoutes);
+app.use('/feed', feedRoutes);        // v2.0 - Content feed with engagement
+app.use('/discover', discoverRoutes); // v2.0 - Content discovery
 
 // 404 handler
 app.use((req, res) => {
@@ -77,14 +81,20 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 // Start server
 app.listen(PORT, () => {
   console.log(`
-  🚀 FocusTab API Server running!
-  
+  🚀 FocusTab API Server v2.0 running!
+
   📍 Local:    http://localhost:${PORT}
   🔒 Health:   http://localhost:${PORT}/health
-  
+
   📧 Webhook:  POST /webhooks/mailgun
   🔑 Auth:     POST /auth/signup, /auth/login
-  📖 Content:  GET  /content/today
+  📖 Content:  GET  /content/today (legacy)
+
+  🆕 v2.0 Endpoints:
+  📰 Feed:     GET  /feed, /feed/next
+  👍 Engage:   POST /feed/bytes/:id/vote, /view, /save
+  🔍 Discover: GET  /discover/sources, /trending, /popular
+  🎯 Onboard:  GET  /discover/onboarding
   `);
 });
 

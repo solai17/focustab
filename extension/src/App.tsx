@@ -1,33 +1,25 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Settings as SettingsIcon } from 'lucide-react';
-import type { UserProfile, Newsletter, Inspiration } from './types';
-import { 
-  getUserProfile, 
-  saveUserProfile, 
-  getNewsletters, 
-  saveNewsletters,
-  getInspirations,
-  saveInspirations,
-  getRandomInspiration,
-  markNewsletterRead,
+import type { UserProfile, ContentByte, VoteValue } from './types';
+import {
+  getUserProfile,
+  saveUserProfile,
   calculateSundaysRemaining,
   calculatePercentLived,
 } from './utils/storage';
-import { SAMPLE_INSPIRATIONS, SAMPLE_NEWSLETTERS } from './data/mockData';
+import { SAMPLE_BYTES, getNextByte } from './data/mockData';
 import { MortalityBar } from './components/MortalityBar';
-import { InspirationCard } from './components/InspirationCard';
-import { ReadingList } from './components/ReadingList';
+import { ByteCard } from './components/ByteCard';
 import { Onboarding } from './components/Onboarding';
 import { Settings } from './components/Settings';
-import { NewsletterReader } from './components/NewsletterReader';
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [newsletters, setNewsletters] = useState<Newsletter[]>([]);
-  const [currentInspiration, setCurrentInspiration] = useState<Inspiration | null>(null);
+  const [currentByte, setCurrentByte] = useState<ContentByte | null>(null);
+  const [queueSize, setQueueSize] = useState(SAMPLE_BYTES.length);
   const [showSettings, setShowSettings] = useState(false);
-  const [readingNewsletter, setReadingNewsletter] = useState<Newsletter | null>(null);
+  const [seenByteIds, setSeenByteIds] = useState<Set<string>>(new Set());
 
   // Load initial data
   useEffect(() => {
@@ -37,25 +29,10 @@ function App() {
         setProfile(savedProfile);
 
         if (savedProfile) {
-          // Load newsletters
-          let savedNewsletters = await getNewsletters();
-          if (savedNewsletters.length === 0) {
-            // Initialize with sample data for demo
-            await saveNewsletters(SAMPLE_NEWSLETTERS);
-            savedNewsletters = SAMPLE_NEWSLETTERS;
-          }
-          setNewsletters(savedNewsletters);
-
-          // Load inspirations
-          let savedInspirations = await getInspirations();
-          if (savedInspirations.length === 0) {
-            await saveInspirations(SAMPLE_INSPIRATIONS);
-            savedInspirations = SAMPLE_INSPIRATIONS;
-          }
-
-          // Get random inspiration
-          const inspiration = await getRandomInspiration();
-          setCurrentInspiration(inspiration);
+          // Get first byte
+          const byte = getNextByte();
+          setCurrentByte(byte);
+          setSeenByteIds(new Set([byte.id]));
         }
       } catch (error) {
         console.error('Failed to load data:', error);
@@ -70,36 +47,68 @@ function App() {
   // Handle onboarding completion
   const handleOnboardingComplete = async (newProfile: UserProfile) => {
     await saveUserProfile(newProfile);
-    await saveNewsletters(SAMPLE_NEWSLETTERS);
-    await saveInspirations(SAMPLE_INSPIRATIONS);
-    
     setProfile(newProfile);
-    setNewsletters(SAMPLE_NEWSLETTERS);
-    
-    const inspiration = await getRandomInspiration();
-    setCurrentInspiration(inspiration);
+
+    // Get first byte
+    const byte = getNextByte();
+    setCurrentByte(byte);
+    setSeenByteIds(new Set([byte.id]));
   };
 
-  // Refresh inspiration
-  const handleRefreshInspiration = useCallback(async () => {
-    const inspiration = await getRandomInspiration();
-    setCurrentInspiration(inspiration);
-  }, []);
-
-  // Handle newsletter read
-  const handleReadNewsletter = useCallback((newsletter: Newsletter) => {
-    setReadingNewsletter(newsletter);
-  }, []);
-
-  // Mark newsletter as read
-  const handleMarkRead = useCallback(async () => {
-    if (readingNewsletter) {
-      await markNewsletterRead(readingNewsletter.id);
-      setNewsletters(prev => 
-        prev.map(n => n.id === readingNewsletter.id ? { ...n, isRead: true } : n)
-      );
+  // Handle vote
+  const handleVote = useCallback((byteId: string, vote: VoteValue) => {
+    console.log('Vote:', byteId, vote);
+    // In demo mode, just update local state
+    // In production, this would call the API
+    if (currentByte && currentByte.id === byteId) {
+      setCurrentByte({
+        ...currentByte,
+        userEngagement: {
+          vote,
+          isSaved: currentByte.userEngagement?.isSaved || false,
+        },
+        engagement: {
+          ...currentByte.engagement,
+          upvotes: currentByte.engagement.upvotes + (vote === 1 ? 1 : 0),
+          downvotes: currentByte.engagement.downvotes + (vote === -1 ? 1 : 0),
+        },
+      });
     }
-  }, [readingNewsletter]);
+  }, [currentByte]);
+
+  // Handle save
+  const handleSave = useCallback((byteId: string) => {
+    console.log('Save:', byteId);
+    if (currentByte && currentByte.id === byteId) {
+      setCurrentByte({
+        ...currentByte,
+        userEngagement: {
+          vote: currentByte.userEngagement?.vote || 0,
+          isSaved: !currentByte.userEngagement?.isSaved,
+        },
+      });
+    }
+  }, [currentByte]);
+
+  // Handle share
+  const handleShare = useCallback((byteId: string) => {
+    console.log('Share:', byteId);
+    // In production, this would track the share
+  }, []);
+
+  // Handle view tracking
+  const handleView = useCallback((byteId: string, dwellTimeMs: number) => {
+    console.log('View:', byteId, 'Dwell time:', dwellTimeMs, 'ms');
+    // In production, this would call the API
+  }, []);
+
+  // Handle next byte
+  const handleNext = useCallback(() => {
+    const byte = getNextByte();
+    setCurrentByte(byte);
+    setSeenByteIds(prev => new Set([...prev, byte.id]));
+    setQueueSize(prev => Math.max(0, prev - 1));
+  }, []);
 
   // Update profile
   const handleUpdateProfile = async (updatedProfile: UserProfile) => {
@@ -109,17 +118,16 @@ function App() {
 
   // Reset all data
   const handleReset = async () => {
-    // Clear all storage using our storage abstraction
     const keys = [
       'focustab_user_profile',
-      'focustab_newsletters', 
+      'focustab_newsletters',
       'focustab_inspirations',
-      'focustab_shown_inspirations'
+      'focustab_shown_inspirations',
+      'focustab_bytes',
     ];
     for (const key of keys) {
       localStorage.removeItem(key);
     }
-    // Also try chrome storage if available
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const chromeRef = (window as any).chrome;
@@ -130,8 +138,9 @@ function App() {
       // Ignore if chrome is not available
     }
     setProfile(null);
-    setNewsletters([]);
-    setCurrentInspiration(null);
+    setCurrentByte(null);
+    setSeenByteIds(new Set());
+    setQueueSize(SAMPLE_BYTES.length);
   };
 
   // Loading state
@@ -156,7 +165,7 @@ function App() {
     <div className="min-h-screen bg-void relative overflow-hidden">
       {/* Grain overlay */}
       <div className="grain-overlay" />
-      
+
       {/* Subtle gradient background */}
       <div className="fixed inset-0 bg-gradient-to-br from-void via-void to-obsidian pointer-events-none" />
       <div className="fixed top-0 right-0 w-1/2 h-1/2 bg-gradient-radial from-life/5 to-transparent pointer-events-none" />
@@ -172,45 +181,43 @@ function App() {
 
       {/* Main content */}
       <main className="relative z-10 min-h-screen flex flex-col items-center justify-center px-6 py-12">
-        <div className="w-full max-w-3xl space-y-12">
-          {/* Mortality Bar */}
+        <div className="w-full max-w-3xl">
+          {/* Mortality Bar - Connects to Content */}
           <MortalityBar
             name={profile.name}
             sundaysRemaining={sundaysRemaining}
             percentLived={percentLived}
           />
 
-          {/* Divider */}
-          <div className="w-24 h-px bg-gradient-to-r from-transparent via-ash to-transparent mx-auto opacity-0 animate-fade-in stagger-1" />
-
-          {/* Inspiration */}
-          {currentInspiration && (
-            <InspirationCard
-              inspiration={currentInspiration}
-              onRefresh={handleRefreshInspiration}
+          {/* Content Byte - "Reels for Text" */}
+          {currentByte ? (
+            <ByteCard
+              byte={currentByte}
+              onVote={handleVote}
+              onSave={handleSave}
+              onShare={handleShare}
+              onNext={handleNext}
+              onView={handleView}
+              queueSize={queueSize}
             />
+          ) : (
+            <div className="text-center py-12">
+              <p className="text-smoke">No content available yet.</p>
+              <p className="text-smoke/60 text-sm mt-2">
+                Forward newsletters to your inbox to get started.
+              </p>
+            </div>
           )}
-
-          {/* Divider */}
-          <div className="w-24 h-px bg-gradient-to-r from-transparent via-ash to-transparent mx-auto opacity-0 animate-fade-in stagger-2" />
-
-          {/* Reading List */}
-          <ReadingList
-            newsletters={newsletters}
-            onRead={handleReadNewsletter}
-          />
         </div>
 
         {/* Footer */}
-        <footer className="mt-16 text-center opacity-0 animate-fade-in stagger-5">
-          <p className="text-xs text-smoke/40">
-            {profile.inboxEmail && (
-              <>
-                Forward newsletters to{' '}
-                <code className="text-life/60">{profile.inboxEmail}</code>
-              </>
-            )}
-          </p>
+        <footer className="mt-12 text-center opacity-0 animate-fade-in animation-delay-500">
+          {profile.inboxEmail && (
+            <p className="text-xs text-smoke/40">
+              Forward newsletters to{' '}
+              <code className="text-life/60">{profile.inboxEmail}</code>
+            </p>
+          )}
         </footer>
       </main>
 
@@ -221,15 +228,6 @@ function App() {
           onClose={() => setShowSettings(false)}
           onUpdate={handleUpdateProfile}
           onReset={handleReset}
-        />
-      )}
-
-      {/* Newsletter Reader Modal */}
-      {readingNewsletter && (
-        <NewsletterReader
-          newsletter={readingNewsletter}
-          onClose={() => setReadingNewsletter(null)}
-          onMarkRead={handleMarkRead}
         />
       )}
     </div>

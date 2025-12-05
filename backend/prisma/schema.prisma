@@ -1,5 +1,6 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// FocusTab Database Schema v2.0
+// "Reels for Text" - Content-Centric Architecture
+// Docs: https://pris.ly/d/prisma-schema
 
 generator client {
   provider = "prisma-client-js"
@@ -9,68 +10,285 @@ datasource db {
   provider = "postgresql"
 }
 
-model User {
-  id              String    @id @default(uuid())
-  email           String    @unique
-  passwordHash    String
-  name            String
-  birthDate       DateTime
-  lifeExpectancy  Int       @default(80)
-  inboxEmail      String    @unique // e.g., user-abc123@focustab.app
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+// =============================================================================
+// USER MODELS
+// =============================================================================
 
-  newsletters     Newsletter[]
-  inspirations    Inspiration[]
+model User {
+  id                    String    @id @default(uuid())
+  email                 String    @unique
+  passwordHash          String
+  name                  String
+  birthDate             DateTime
+  lifeExpectancy        Int       @default(80)
+  inboxEmail            String    @unique // e.g., user-abc123@inbox.focustab.app
+
+  // Monetization & Personalization
+  enableRecommendations Boolean   @default(true)  // Opt-in for sponsored content
+  onboardingCompleted   Boolean   @default(false)
+
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  // Relations
+  subscriptions         UserSubscription[]
+  engagements           UserEngagement[]
+  contentHistory        ContentHistory[]
+  preferences           UserPreference[]
 
   @@map("users")
 }
 
-model Newsletter {
+// User's subscription to a newsletter source
+model UserSubscription {
   id              String    @id @default(uuid())
   userId          String
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+  sourceId        String
+  source          NewsletterSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  subscribedAt    DateTime  @default(now())
+  isActive        Boolean   @default(true)
+
+  // Track how user discovered this source
+  discoveryMethod String    @default("forwarded") // forwarded, recommended, search
+
+  @@unique([userId, sourceId])
+  @@index([userId])
+  @@index([sourceId])
+  @@map("user_subscriptions")
+}
+
+// User's engagement with a content byte (votes, saves, etc.)
+model UserEngagement {
+  id              String    @id @default(uuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  byteId          String
+  byte            ContentByte @relation(fields: [byteId], references: [id], onDelete: Cascade)
+
+  vote            Int       @default(0) // +1 upvote, -1 downvote, 0 neutral
+  isSaved         Boolean   @default(false)
+  isShared        Boolean   @default(false)
+
+  // Implicit engagement
+  viewCount       Int       @default(0)
+  totalDwellTimeMs Int      @default(0) // Total time spent viewing
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([userId, byteId])
+  @@index([userId])
+  @@index([byteId])
+  @@index([vote])
+  @@map("user_engagements")
+}
+
+// Track what content user has seen (for feed deduplication)
+model ContentHistory {
+  id              String    @id @default(uuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  byteId          String
+  byte            ContentByte @relation(fields: [byteId], references: [id], onDelete: Cascade)
+
+  shownAt         DateTime  @default(now())
+  dwellTimeMs     Int?      // How long user viewed this byte
+
+  @@unique([userId, byteId])
+  @@index([userId])
+  @@index([shownAt])
+  @@map("content_history")
+}
+
+// User's category preferences for personalization
+model UserPreference {
+  id              String    @id @default(uuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  category        String    // productivity, wisdom, business, tech, etc.
+  weight          Float     @default(0.5) // 0.0 to 1.0, learned from engagement
+
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([userId, category])
+  @@index([userId])
+  @@map("user_preferences")
+}
+
+// =============================================================================
+// CONTENT MODELS (Shared across users)
+// =============================================================================
+
+// Newsletter source (e.g., "Lenny's Newsletter", "Stratechery")
+model NewsletterSource {
+  id              String    @id @default(uuid())
+
+  name            String    // Display name
+  senderEmail     String    @unique // Primary identifier
+  senderDomain    String    // Extracted domain for grouping
+  description     String?   // Auto-generated or manual
+
+  // Categorization
+  category        String    @default("general") // tech, business, productivity, etc.
+  tags            String[]  @default([])
+
+  // Aggregate stats (updated periodically)
+  subscriberCount Int       @default(0)
+  totalEngagement Int       @default(0)
+  avgEngagementScore Float  @default(0)
+
+  // Verification & Monetization
+  isVerified      Boolean   @default(false) // Verified content creator
+  isSponsored     Boolean   @default(false) // Paid placement
+  sponsorTier     String?   // bronze, silver, gold, etc.
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  editions        Edition[]
+  subscriptions   UserSubscription[]
+
+  @@index([category])
+  @@index([isVerified])
+  @@index([avgEngagementScore])
+  @@map("newsletter_sources")
+}
+
+// Individual newsletter issue/edition
+model Edition {
+  id              String    @id @default(uuid())
+  sourceId        String
+  source          NewsletterSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  subject         String
+  contentHash     String    @unique // For deduplication
+  rawContent      String    // Original HTML
+  textContent     String    // Extracted plain text
+
+  // AI-processed summary
+  summary         String?
+  readTimeMinutes Int?
+
+  // Processing status
+  isProcessed     Boolean   @default(false)
+  processingError String?
+
+  publishedAt     DateTime  @default(now()) // When newsletter was sent
+  receivedAt      DateTime  @default(now()) // When we received it
+  processedAt     DateTime?
+
+  // Relations
+  bytes           ContentByte[]
+
+  @@index([sourceId])
+  @@index([publishedAt])
+  @@index([contentHash])
+  @@map("editions")
+}
+
+// Individual bite-sized content extracted from newsletters
+model ContentByte {
+  id              String    @id @default(uuid())
+  editionId       String
+  edition         Edition   @relation(fields: [editionId], references: [id], onDelete: Cascade)
+
+  // The actual content
+  content         String    // The quote, insight, or takeaway
+  type            String    @default("insight") // quote, insight, statistic, action, takeaway
+
+  // Attribution
+  author          String?   // Original author if different from newsletter
+  context         String?   // Brief context about where this came from
+
+  // Categorization
+  category        String    @default("wisdom") // wisdom, productivity, business, tech, life, etc.
+  tags            String[]  @default([])
+
+  // Engagement metrics (aggregate, updated periodically)
+  upvotes         Int       @default(0)
+  downvotes       Int       @default(0)
+  viewCount       Int       @default(0)
+  saveCount       Int       @default(0)
+  shareCount      Int       @default(0)
+
+  // Calculated scores
+  engagementScore Float     @default(0) // Weighted engagement
+  trendingScore   Float     @default(0) // Time-decayed engagement
+  qualityScore    Float     @default(0) // AI-assessed quality (0-1)
+
+  // For sponsored content
+  isSponsored     Boolean   @default(false)
+  sponsorId       String?   // Reference to sponsor/creator
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  engagements     UserEngagement[]
+  history         ContentHistory[]
+
+  @@index([editionId])
+  @@index([type])
+  @@index([category])
+  @@index([engagementScore])
+  @@index([trendingScore])
+  @@index([createdAt])
+  @@index([isSponsored])
+  @@map("content_bytes")
+}
+
+// =============================================================================
+// LEGACY MODELS (For migration, will be deprecated)
+// =============================================================================
+
+model Newsletter {
+  id              String    @id @default(uuid())
+  userId          String
+
   senderEmail     String
   senderName      String?
   subject         String
-  rawContent      String    // Original HTML
-  textContent     String    // Extracted plain text
-  
-  // Processed content
+  rawContent      String
+  textContent     String
+
   summary         String?
   keyInsight      String?
   readTimeMinutes Int?
   isProcessed     Boolean   @default(false)
   isRead          Boolean   @default(false)
-  
+
   receivedAt      DateTime  @default(now())
   processedAt     DateTime?
-  
-  inspirations    Inspiration[]
+
+  // Migration tracking
+  migratedToEditionId String?
 
   @@index([userId])
   @@index([isRead])
-  @@map("newsletters")
+  @@map("newsletters_legacy")
 }
 
 model Inspiration {
   id              String    @id @default(uuid())
   userId          String
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
   newsletterId    String?
-  newsletter      Newsletter? @relation(fields: [newsletterId], references: [id], onDelete: SetNull)
-  
+
   quote           String
   author          String?
-  source          String    // Newsletter name or source
-  category        String    @default("wisdom") // wisdom, motivation, reflection
-  
+  source          String
+  category        String    @default("wisdom")
+
   shownCount      Int       @default(0)
   lastShownAt     DateTime?
   createdAt       DateTime  @default(now())
 
+  // Migration tracking
+  migratedToByteId String?
+
   @@index([userId])
-  @@map("inspirations")
+  @@map("inspirations_legacy")
 }
