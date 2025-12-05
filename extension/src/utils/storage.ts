@@ -56,7 +56,17 @@ export const storage = {
 
 // User profile management
 export async function getUserProfile(): Promise<UserProfile | null> {
-  return storage.get<UserProfile>(STORAGE_KEYS.USER_PROFILE);
+  const profile = await storage.get<UserProfile>(STORAGE_KEYS.USER_PROFILE);
+
+  // Add default values for new fields (backwards compatibility)
+  if (profile) {
+    return {
+      ...profile,
+      enableRecommendations: profile.enableRecommendations ?? true,
+    };
+  }
+
+  return null;
 }
 
 export async function saveUserProfile(profile: UserProfile): Promise<void> {
