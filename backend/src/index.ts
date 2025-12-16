@@ -12,6 +12,8 @@ import contentRoutes from './routes/content';
 import webhookRoutes from './routes/webhooks';
 import feedRoutes from './routes/feed';
 import discoverRoutes from './routes/discover';
+import testFeedRoutes from './routes/testFeed';
+import { isMockDb } from './services/db';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -66,6 +68,7 @@ app.use('/content', contentRoutes);
 app.use('/webhooks', webhookRoutes);
 app.use('/feed', feedRoutes);        // v2.0 - Content feed with engagement
 app.use('/discover', discoverRoutes); // v2.0 - Content discovery
+app.use('/test-feed', testFeedRoutes); // Test routes (no auth, works with mock db)
 
 // 404 handler
 app.use((req, res) => {
@@ -80,11 +83,13 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 
 // Start server
 app.listen(PORT, () => {
+  const dbMode = isMockDb ? '🧪 MOCK DATABASE' : '🗄️  PostgreSQL';
   console.log(`
   🚀 FocusTab API Server v2.0 running!
 
   📍 Local:    http://localhost:${PORT}
   🔒 Health:   http://localhost:${PORT}/health
+  💾 Database: ${dbMode}
 
   📧 Webhook:  POST /webhooks/mailgun
   🔑 Auth:     POST /auth/signup, /auth/login
@@ -95,6 +100,12 @@ app.listen(PORT, () => {
   👍 Engage:   POST /feed/bytes/:id/vote, /view, /save
   🔍 Discover: GET  /discover/sources, /trending, /popular
   🎯 Onboard:  GET  /discover/onboarding
+
+  🧪 Test Endpoints (no auth, works with mock db):
+  📰 Feed:     GET  /test-feed, /test-feed/next
+  👍 Vote:     POST /test-feed/bytes/:id/vote
+  📊 Sources:  GET  /test-feed/sources
+  📈 Stats:    GET  /test-feed/stats
   `);
 });
 
