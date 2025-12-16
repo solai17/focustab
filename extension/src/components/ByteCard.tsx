@@ -8,7 +8,7 @@ import {
   CheckCircle,
   Sparkles,
 } from 'lucide-react';
-import { ContentByte, VoteValue } from '../types';
+import type { ContentByte, VoteValue } from '../types';
 
 interface ByteCardProps {
   byte: ContentByte;
