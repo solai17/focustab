@@ -9,7 +9,7 @@
     "identity.email"
   ],
   "oauth2": {
-    "client_id": "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com",
+    "client_id": "147274471196-69l58eiuh9f7esmuk4deccjlg2ln2d6m.apps.googleusercontent.com",
     "scopes": [
       "openid",
       "email",
