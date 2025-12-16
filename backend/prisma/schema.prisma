@@ -7,8 +7,8 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // =============================================================================
@@ -18,9 +18,10 @@ datasource db {
 model User {
   id                    String    @id @default(uuid())
   email                 String    @unique
-  passwordHash          String
+  googleId              String?   @unique // Google account ID for Chrome Identity
+  passwordHash          String    // Empty string for Google-only accounts
   name                  String
-  birthDate             DateTime
+  birthDate             DateTime?  // Nullable for incomplete onboarding
   lifeExpectancy        Int       @default(80)
   inboxEmail            String    @unique // e.g., user-abc123@inbox.focustab.app
 
@@ -37,6 +38,7 @@ model User {
   contentHistory        ContentHistory[]
   preferences           UserPreference[]
 
+  @@index([googleId])
   @@map("users")
 }
 
