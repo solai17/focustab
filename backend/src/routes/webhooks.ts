@@ -125,6 +125,120 @@ router.post('/mailgun', upload.none(), async (req: Request, res: Response) => {
 });
 
 // =============================================================================
+// CLOUDFLARE EMAIL WORKER WEBHOOK
+// =============================================================================
+
+const CLOUDFLARE_WEBHOOK_SECRET = process.env.CLOUDFLARE_WEBHOOK_SECRET || '';
+
+interface CloudflareEmailPayload {
+  recipient: string;
+  sender: string;
+  senderName: string;
+  subject: string;
+  htmlContent: string;
+  textContent: string;
+  receivedAt: string;
+}
+
+/**
+ * POST /webhooks/cloudflare
+ * Receive emails from Cloudflare Email Worker
+ */
+router.post('/cloudflare', async (req: Request, res: Response) => {
+  try {
+    // Verify webhook secret if configured
+    if (CLOUDFLARE_WEBHOOK_SECRET) {
+      const providedSecret = req.headers['x-webhook-secret'];
+      if (providedSecret !== CLOUDFLARE_WEBHOOK_SECRET) {
+        console.warn('Invalid Cloudflare webhook secret');
+        res.status(403).json({ error: 'Invalid webhook secret' });
+        return;
+      }
+    }
+
+    const payload = req.body as CloudflareEmailPayload;
+
+    // Validate required fields
+    if (!payload.recipient || !payload.sender) {
+      res.status(400).json({ error: 'recipient and sender are required' });
+      return;
+    }
+
+    const recipientEmail = payload.recipient.toLowerCase();
+    const senderEmail = payload.sender.toLowerCase();
+    const senderName = payload.senderName || senderEmail.split('@')[0];
+    const subject = payload.subject || 'No Subject';
+    const textContent = payload.textContent || htmlToText(payload.htmlContent || '');
+    const htmlContent = payload.htmlContent || '';
+
+    // Find user by inbox email
+    const user = await prisma.user.findUnique({
+      where: { inboxEmail: recipientEmail },
+    });
+
+    if (!user) {
+      console.warn(`No user found for inbox: ${recipientEmail}`);
+      res.status(200).json({ message: 'Recipient not found, email discarded' });
+      return;
+    }
+
+    // Generate content hash for deduplication
+    const contentHash = generateContentHash(subject, textContent);
+
+    // Check if this edition already exists (deduplication)
+    const existingEdition = await prisma.edition.findUnique({
+      where: { contentHash },
+      include: { source: true },
+    });
+
+    if (existingEdition) {
+      // Edition exists - just link user to source if not already subscribed
+      await ensureUserSubscription(user.id, existingEdition.sourceId, 'forwarded');
+      console.log(`Duplicate edition detected: ${existingEdition.id}, linked user ${user.id}`);
+
+      res.status(200).json({
+        message: 'Email received (duplicate edition)',
+        editionId: existingEdition.id,
+        isDuplicate: true,
+      });
+      return;
+    }
+
+    // Find or create newsletter source
+    const source = await findOrCreateSource(senderEmail, senderName, textContent);
+
+    // Create new edition
+    const edition = await prisma.edition.create({
+      data: {
+        sourceId: source.id,
+        subject,
+        contentHash,
+        rawContent: htmlContent,
+        textContent,
+        isProcessed: false,
+      },
+    });
+
+    // Link user to source
+    await ensureUserSubscription(user.id, source.id, 'forwarded');
+
+    console.log(`New edition created via Cloudflare: ${edition.id} for source ${source.name}`);
+
+    // Process with Claude asynchronously (don't await - respond quickly)
+    processEditionAsync(edition.id, subject, textContent, source.name);
+
+    res.status(200).json({
+      message: 'Email received',
+      editionId: edition.id,
+      sourceId: source.id,
+    });
+  } catch (error) {
+    console.error('Cloudflare webhook error:', error);
+    res.status(200).json({ error: 'Processing error' });
+  }
+});
+
+// =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
 
