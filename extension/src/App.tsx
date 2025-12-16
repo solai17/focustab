@@ -173,7 +173,7 @@ function App() {
       {/* Settings button */}
       <button
         onClick={() => setShowSettings(true)}
-        className="fixed top-6 right-6 p-3 rounded-xl bg-slate/50 border border-ash/50 hover:bg-ash transition-colors z-10"
+        className="fixed top-6 right-6 p-3 rounded-xl bg-slate/50 border border-ash/50 hover:bg-ash transition-colors z-50"
         title="Settings"
       >
         <SettingsIcon className="w-5 h-5 text-smoke" />
