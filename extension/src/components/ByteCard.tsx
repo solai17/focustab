@@ -29,21 +29,23 @@ export function ByteCard({
   onView,
   queueSize,
 }: ByteCardProps) {
-  const [localVote, setLocalVote] = useState<VoteValue>(
-    (byte.userEngagement?.vote as VoteValue) || 0
-  );
-  const [localSaved, setLocalSaved] = useState(byte.userEngagement?.isSaved || false);
+  const [localVote, setLocalVote] = useState<VoteValue>(0);
+  const [localSaved, setLocalSaved] = useState(false);
   const [showShareToast, setShowShareToast] = useState(false);
   const viewStartTime = useRef(Date.now());
 
+  // Reset state when byte changes (fixes issue #2)
+  useEffect(() => {
+    setLocalVote((byte.userEngagement?.vote as VoteValue) || 0);
+    setLocalSaved(byte.userEngagement?.isSaved || false);
+    viewStartTime.current = Date.now();
+  }, [byte.id]);
+
   // Track view time when unmounting or navigating away
   useEffect(() => {
-    viewStartTime.current = Date.now();
-
     return () => {
       const dwellTime = Date.now() - viewStartTime.current;
       if (dwellTime > 1000) {
-        // Only track if viewed for more than 1 second
         onView(byte.id, dwellTime);
       }
     };
@@ -69,14 +71,9 @@ export function ByteCard({
       setTimeout(() => setShowShareToast(false), 2000);
       onShare(byte.id);
     } catch {
-      // Fallback for browsers without clipboard API
       onShare(byte.id);
     }
   };
-
-  // Calculate display metrics
-  const upvotes = byte.engagement.upvotes + (localVote === 1 ? 1 : 0) - (byte.userEngagement?.vote === 1 ? 1 : 0);
-  const downvotes = byte.engagement.downvotes + (localVote === -1 ? 1 : 0) - (byte.userEngagement?.vote === -1 ? 1 : 0);
 
   // Get badge color based on type
   const getTypeBadgeColor = () => {
@@ -149,30 +146,30 @@ export function ByteCard({
 
         {/* Engagement Bar */}
         <div className="flex items-center justify-between pt-4 border-t border-ash/30">
-          {/* Vote Buttons */}
-          <div className="flex items-center gap-4">
+          {/* Vote Buttons - No counts shown, just icons for user feedback */}
+          <div className="flex items-center gap-2">
             <button
               onClick={() => handleVote(1)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+              className={`p-2 rounded-lg transition-all ${
                 localVote === 1
                   ? 'bg-life/20 text-life'
                   : 'hover:bg-ash/30 text-smoke hover:text-pearl'
               }`}
+              title="I found this valuable"
             >
               <ThumbsUp className="w-5 h-5" />
-              <span className="font-medium">{upvotes}</span>
             </button>
 
             <button
               onClick={() => handleVote(-1)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+              className={`p-2 rounded-lg transition-all ${
                 localVote === -1
                   ? 'bg-rose/20 text-rose'
                   : 'hover:bg-ash/30 text-smoke hover:text-pearl'
               }`}
+              title="Not for me"
             >
               <ThumbsDown className="w-5 h-5" />
-              <span className="font-medium">{downvotes}</span>
             </button>
           </div>
 
@@ -185,7 +182,7 @@ export function ByteCard({
                   ? 'bg-amber/20 text-amber'
                   : 'hover:bg-ash/30 text-smoke hover:text-pearl'
               }`}
-              title="Save"
+              title="Save for later"
             >
               <Bookmark className={`w-5 h-5 ${localSaved ? 'fill-current' : ''}`} />
             </button>
