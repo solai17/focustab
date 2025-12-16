@@ -4,8 +4,18 @@
   "version": "1.0.0",
   "description": "Transform every new tab into a reminder of what matters. AI-curated wisdom from your newsletters + mortality awareness.",
   "permissions": [
-    "storage"
+    "storage",
+    "identity",
+    "identity.email"
   ],
+  "oauth2": {
+    "client_id": "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com",
+    "scopes": [
+      "openid",
+      "email",
+      "profile"
+    ]
+  },
   "chrome_url_overrides": {
     "newtab": "index.html"
   },

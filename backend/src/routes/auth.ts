@@ -4,12 +4,102 @@ import prisma from '../services/db';
 import { generateToken, authenticateToken } from '../middleware/auth';
 import { generateInboxEmail } from '../services/utils';
 import { SignupInput, LoginInput, AuthenticatedRequest } from '../types';
+import { rateLimits } from '../middleware/security';
 
 const router = Router();
 
+// Apply rate limiting to all auth routes
+router.use(rateLimits.auth);
+
+/**
+ * POST /auth/google
+ * Authenticate or create user via Google/Chrome identity
+ * This is the primary auth method for the Chrome extension
+ */
+router.post('/google', async (req: Request, res: Response) => {
+  try {
+    const { googleEmail, googleId, name, birthDate, lifeExpectancy, enableRecommendations } = req.body;
+
+    // Validate required fields
+    if (!googleEmail || !googleId) {
+      res.status(400).json({ error: 'Google email and ID are required' });
+      return;
+    }
+
+    // Check if user exists by Google ID or email
+    let user = await prisma.user.findUnique({
+      where: { email: googleEmail.toLowerCase() },
+    });
+
+    if (user) {
+      // Existing user - update Google ID if not set
+      if (!user.googleId) {
+        user = await prisma.user.update({
+          where: { id: user.id },
+          data: { googleId },
+        });
+      }
+
+      // Update profile if new data provided
+      if (name || birthDate || lifeExpectancy !== undefined || enableRecommendations !== undefined) {
+        const updateData: Record<string, unknown> = {};
+        if (name && !user.name) updateData.name = name;
+        if (birthDate && !user.birthDate) updateData.birthDate = new Date(birthDate);
+        if (lifeExpectancy !== undefined) updateData.lifeExpectancy = lifeExpectancy;
+        if (enableRecommendations !== undefined) updateData.enableRecommendations = enableRecommendations;
+
+        if (Object.keys(updateData).length > 0) {
+          user = await prisma.user.update({
+            where: { id: user.id },
+            data: updateData,
+          });
+        }
+      }
+    } else {
+      // New user - create account
+      const inboxEmail = generateInboxEmail(name || googleEmail.split('@')[0]);
+
+      user = await prisma.user.create({
+        data: {
+          email: googleEmail.toLowerCase(),
+          googleId,
+          passwordHash: '', // No password for Google auth
+          name: name || googleEmail.split('@')[0],
+          birthDate: birthDate ? new Date(birthDate) : null,
+          lifeExpectancy: lifeExpectancy || 80,
+          enableRecommendations: enableRecommendations ?? true,
+          inboxEmail,
+          onboardingCompleted: !!(name && birthDate),
+        },
+      });
+    }
+
+    // Generate token
+    const token = generateToken({ userId: user.id, email: user.email });
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        birthDate: user.birthDate,
+        lifeExpectancy: user.lifeExpectancy,
+        inboxEmail: user.inboxEmail,
+        enableRecommendations: user.enableRecommendations,
+        onboardingCompleted: user.onboardingCompleted,
+      },
+      isNewUser: !user.onboardingCompleted,
+    });
+  } catch (error) {
+    console.error('Google auth error:', error);
+    res.status(500).json({ error: 'Authentication failed' });
+  }
+});
+
 /**
  * POST /auth/signup
- * Create a new user account
+ * Create a new user account (email/password method)
  */
 router.post('/signup', async (req: Request, res: Response) => {
   try {
@@ -26,6 +116,13 @@ router.post('/signup', async (req: Request, res: Response) => {
       return;
     }
 
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      res.status(400).json({ error: 'Invalid email format' });
+      return;
+    }
+
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
       where: { email: email.toLowerCase() },
@@ -36,7 +133,7 @@ router.post('/signup', async (req: Request, res: Response) => {
       return;
     }
 
-    // Hash password
+    // Hash password with high cost factor
     const passwordHash = await bcrypt.hash(password, 12);
 
     // Generate unique inbox email
@@ -50,6 +147,7 @@ router.post('/signup', async (req: Request, res: Response) => {
         name,
         birthDate: new Date(birthDate),
         inboxEmail,
+        onboardingCompleted: true,
       },
     });
 
@@ -66,6 +164,7 @@ router.post('/signup', async (req: Request, res: Response) => {
         birthDate: user.birthDate,
         lifeExpectancy: user.lifeExpectancy,
         inboxEmail: user.inboxEmail,
+        enableRecommendations: user.enableRecommendations,
       },
     });
   } catch (error) {
@@ -93,11 +192,18 @@ router.post('/login', async (req: Request, res: Response) => {
     });
 
     if (!user) {
+      // Use same error message to prevent email enumeration
       res.status(401).json({ error: 'Invalid credentials' });
       return;
     }
 
-    // Verify password
+    // Check if user has password (might be Google-only account)
+    if (!user.passwordHash) {
+      res.status(401).json({ error: 'Please sign in with Google' });
+      return;
+    }
+
+    // Verify password with timing-safe comparison
     const isValid = await bcrypt.compare(password, user.passwordHash);
     if (!isValid) {
       res.status(401).json({ error: 'Invalid credentials' });
@@ -116,6 +222,7 @@ router.post('/login', async (req: Request, res: Response) => {
         birthDate: user.birthDate,
         lifeExpectancy: user.lifeExpectancy,
         inboxEmail: user.inboxEmail,
+        enableRecommendations: user.enableRecommendations,
       },
     });
   } catch (error) {
@@ -139,6 +246,8 @@ router.get('/me', authenticateToken, async (req: AuthenticatedRequest, res: Resp
         birthDate: true,
         lifeExpectancy: true,
         inboxEmail: true,
+        enableRecommendations: true,
+        onboardingCompleted: true,
         createdAt: true,
       },
     });
@@ -161,12 +270,18 @@ router.get('/me', authenticateToken, async (req: AuthenticatedRequest, res: Resp
  */
 router.put('/profile', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { name, birthDate, lifeExpectancy } = req.body;
+    const { name, birthDate, lifeExpectancy, enableRecommendations } = req.body;
 
     const updateData: Record<string, unknown> = {};
-    if (name) updateData.name = name;
-    if (birthDate) updateData.birthDate = new Date(birthDate);
-    if (lifeExpectancy) updateData.lifeExpectancy = parseInt(lifeExpectancy);
+    if (name !== undefined) updateData.name = name;
+    if (birthDate !== undefined) updateData.birthDate = new Date(birthDate);
+    if (lifeExpectancy !== undefined) updateData.lifeExpectancy = parseInt(lifeExpectancy);
+    if (enableRecommendations !== undefined) updateData.enableRecommendations = enableRecommendations;
+
+    // Mark onboarding complete if name and birthDate are set
+    if (name && birthDate) {
+      updateData.onboardingCompleted = true;
+    }
 
     const user = await prisma.user.update({
       where: { id: req.userId },
@@ -178,6 +293,8 @@ router.put('/profile', authenticateToken, async (req: AuthenticatedRequest, res:
         birthDate: true,
         lifeExpectancy: true,
         inboxEmail: true,
+        enableRecommendations: true,
+        onboardingCompleted: true,
       },
     });
 
@@ -186,6 +303,18 @@ router.put('/profile', authenticateToken, async (req: AuthenticatedRequest, res:
     console.error('Update profile error:', error);
     res.status(500).json({ error: 'Failed to update profile' });
   }
+});
+
+/**
+ * POST /auth/logout
+ * Logout user (primarily for token invalidation tracking)
+ */
+router.post('/logout', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  // In a production system, you might want to:
+  // 1. Add the token to a blacklist (Redis)
+  // 2. Track logout events for security
+  // For now, we just acknowledge the logout
+  res.json({ message: 'Logged out successfully' });
 });
 
 export default router;
