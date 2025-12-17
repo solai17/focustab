@@ -7,11 +7,30 @@ import {
   calculateSundaysRemaining,
   calculatePercentLived,
 } from './utils/storage';
+import {
+  initializeAuth,
+  getChromeIdentity,
+  authenticateWithGoogle,
+  clearAuth,
+  type AuthUser,
+} from './services/auth';
 import { SAMPLE_BYTES, getNextByte } from './data/mockData';
 import { MortalityBar } from './components/MortalityBar';
 import { ByteCard } from './components/ByteCard';
 import { Onboarding } from './components/Onboarding';
 import { Settings } from './components/Settings';
+
+// Convert backend user to local profile format
+function userToProfile(user: AuthUser): UserProfile {
+  return {
+    name: user.name,
+    birthDate: user.birthDate || new Date().toISOString().split('T')[0],
+    lifeExpectancy: user.lifeExpectancy || 80,
+    inboxEmail: user.inboxEmail,
+    enableRecommendations: user.enableRecommendations ?? true,
+    createdAt: new Date().toISOString(),
+  };
+}
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
@@ -22,10 +41,55 @@ function App() {
   // Track seen bytes for deduplication (used when fetching from API)
   const [, setSeenByteIds] = useState<Set<string>>(new Set());
 
-  // Load initial data
+  // Load initial data with auto-login
   useEffect(() => {
     async function loadData() {
       try {
+        // Try to restore authenticated session
+        const authState = await initializeAuth();
+
+        if (authState.isAuthenticated && authState.user) {
+          // User is authenticated - convert to profile and use
+          const userProfile = userToProfile(authState.user);
+          await saveUserProfile(userProfile);
+          setProfile(userProfile);
+
+          // Get first byte
+          const byte = getNextByte();
+          setCurrentByte(byte);
+          setSeenByteIds(new Set([byte.id]));
+          return;
+        }
+
+        // Not authenticated - check if we have Chrome Identity
+        const chromeIdentity = await getChromeIdentity();
+        if (chromeIdentity) {
+          // Try to silently authenticate to check if user exists
+          try {
+            const { user, isNewUser } = await authenticateWithGoogle(
+              chromeIdentity.email,
+              chromeIdentity.id
+            );
+
+            if (!isNewUser && user.birthDate) {
+              // Existing user with completed onboarding - auto-login
+              const userProfile = userToProfile(user);
+              await saveUserProfile(userProfile);
+              setProfile(userProfile);
+
+              // Get first byte
+              const byte = getNextByte();
+              setCurrentByte(byte);
+              setSeenByteIds(new Set([byte.id]));
+              return;
+            }
+            // New user or incomplete onboarding - show onboarding
+          } catch (err) {
+            console.log('Silent auth failed, falling back to local:', err);
+          }
+        }
+
+        // Fall back to local profile (legacy/offline mode)
         const savedProfile = await getUserProfile();
         setProfile(savedProfile);
 
@@ -119,6 +183,9 @@ function App() {
 
   // Reset all data
   const handleReset = async () => {
+    // Clear auth state
+    await clearAuth();
+
     const keys = [
       'focustab_user_profile',
       'focustab_newsletters',
