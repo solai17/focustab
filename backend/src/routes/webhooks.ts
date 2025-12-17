@@ -14,6 +14,157 @@ const router = Router();
 const upload = multer();
 
 const MAILGUN_SIGNING_KEY = process.env.MAILGUN_WEBHOOK_SIGNING_KEY || '';
+const CLOUDFLARE_WEBHOOK_SECRET = process.env.CLOUDFLARE_WEBHOOK_SECRET || '';
+
+// =============================================================================
+// CLOUDFLARE EMAIL WORKER WEBHOOK
+// =============================================================================
+
+/**
+ * POST /webhooks/cloudflare
+ * Receive incoming emails from Cloudflare Email Workers
+ */
+router.post('/cloudflare', async (req: Request, res: Response) => {
+  try {
+    const {
+      recipient,
+      sender,
+      senderName,
+      subject,
+      htmlContent,
+      textContent,
+      receivedAt,
+    } = req.body;
+
+    // Verify webhook secret if configured
+    if (CLOUDFLARE_WEBHOOK_SECRET) {
+      const providedSecret = req.headers['x-webhook-secret'];
+      if (providedSecret !== CLOUDFLARE_WEBHOOK_SECRET) {
+        console.warn('Invalid Cloudflare webhook secret');
+        res.status(403).json({ error: 'Invalid webhook secret' });
+        return;
+      }
+    }
+
+    // Validate required fields
+    if (!recipient || !sender) {
+      res.status(400).json({ error: 'recipient and sender are required' });
+      return;
+    }
+
+    const recipientEmail = recipient.toLowerCase();
+    const senderEmail = sender.toLowerCase();
+    const finalSubject = subject || 'No Subject';
+    const finalSenderName = senderName || extractSenderName(sender);
+    const finalTextContent = textContent || htmlToText(htmlContent || '');
+
+    console.log(`[Cloudflare] Email from ${senderEmail} to ${recipientEmail}`);
+
+    // Find user by inbox email
+    const user = await prisma.user.findUnique({
+      where: { inboxEmail: recipientEmail },
+    });
+
+    if (!user) {
+      console.warn(`[Cloudflare] No user found for inbox: ${recipientEmail}`);
+      res.status(200).json({ message: 'Recipient not found, email discarded' });
+      return;
+    }
+
+    // Generate content hash for deduplication
+    const contentHash = generateContentHash(finalSubject, finalTextContent);
+
+    // Check if this edition already exists (deduplication)
+    const existingEdition = await prisma.edition.findUnique({
+      where: { contentHash },
+      include: { source: true },
+    });
+
+    if (existingEdition) {
+      await ensureUserSubscription(user.id, existingEdition.sourceId, 'forwarded');
+      console.log(`[Cloudflare] Duplicate edition: ${existingEdition.id}`);
+
+      res.status(200).json({
+        message: 'Email received (duplicate edition)',
+        editionId: existingEdition.id,
+        isDuplicate: true,
+      });
+      return;
+    }
+
+    // Find or create newsletter source
+    const source = await findOrCreateSource(senderEmail, finalSenderName, finalTextContent);
+
+    // Create new edition
+    const edition = await prisma.edition.create({
+      data: {
+        sourceId: source.id,
+        subject: finalSubject,
+        contentHash,
+        rawContent: htmlContent || '',
+        textContent: finalTextContent,
+        isProcessed: false,
+      },
+    });
+
+    // Link user to source
+    await ensureUserSubscription(user.id, source.id, 'forwarded');
+
+    console.log(`[Cloudflare] New edition: ${edition.id} for source ${source.name}`);
+
+    // Process with Claude asynchronously
+    processEditionAsync(edition.id, finalSubject, finalTextContent, source.name);
+
+    // Create legacy Newsletter record for backward compatibility
+    await createLegacyNewsletterFromCloudflare(
+      user.id,
+      senderEmail,
+      finalSenderName,
+      finalSubject,
+      htmlContent || '',
+      finalTextContent
+    );
+
+    res.status(200).json({
+      message: 'Email received',
+      editionId: edition.id,
+      sourceId: source.id,
+    });
+  } catch (error) {
+    console.error('[Cloudflare] Webhook error:', error);
+    res.status(200).json({ error: 'Processing error' });
+  }
+});
+
+/**
+ * Create legacy newsletter from Cloudflare payload
+ */
+async function createLegacyNewsletterFromCloudflare(
+  userId: string,
+  senderEmail: string,
+  senderName: string,
+  subject: string,
+  htmlContent: string,
+  textContent: string
+): Promise<void> {
+  try {
+    const newsletter = await prisma.newsletter.create({
+      data: {
+        userId,
+        senderEmail,
+        senderName,
+        subject,
+        rawContent: htmlContent,
+        textContent,
+        isProcessed: false,
+      },
+    });
+
+    processLegacyNewsletterAsync(newsletter.id, subject, textContent, senderName);
+  } catch (error) {
+    console.error('[Cloudflare] Failed to create legacy newsletter:', error);
+  }
+}
 
 // =============================================================================
 // v2.0 WEBHOOK - Content-Centric Processing

@@ -91,7 +91,7 @@ app.listen(PORT, () => {
   🔒 Health:   http://localhost:${PORT}/health
   💾 Database: ${dbMode}
 
-  📧 Webhook:  POST /webhooks/mailgun
+  📧 Webhook:  POST /webhooks/cloudflare, /webhooks/mailgun
   🔑 Auth:     POST /auth/signup, /auth/login
   📖 Content:  GET  /content/today (legacy)
 
