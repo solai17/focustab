@@ -321,9 +321,9 @@ const isExtension = typeof chrome !== 'undefined' && chrome?.storage;
  * Get shown byte IDs from storage
  */
 async function getShownByteIds(): Promise<string[]> {
-  if (isExtension && chrome?.storage) {
+  if (isExtension && chrome?.storage?.local) {
     return new Promise((resolve) => {
-      chrome.storage.local.get([STORAGE_KEY], (result) => {
+      chrome.storage!.local.get([STORAGE_KEY], (result) => {
         resolve((result[STORAGE_KEY] as string[]) || []);
       });
     });
@@ -336,9 +336,9 @@ async function getShownByteIds(): Promise<string[]> {
  * Get last shown byte ID
  */
 async function getLastByteId(): Promise<string | null> {
-  if (isExtension && chrome?.storage) {
+  if (isExtension && chrome?.storage?.local) {
     return new Promise((resolve) => {
-      chrome.storage.local.get([LAST_BYTE_KEY], (result) => {
+      chrome.storage!.local.get([LAST_BYTE_KEY], (result) => {
         resolve((result[LAST_BYTE_KEY] as string) || null);
       });
     });
@@ -419,13 +419,11 @@ export async function getNextByteAsync(): Promise<ContentByte> {
  */
 let cachedShownIds: string[] = [];
 let cachedLastByteId: string | null = null;
-let cacheInitialized = false;
 
 // Initialize cache on module load
 (async () => {
   cachedShownIds = await getShownByteIds();
   cachedLastByteId = await getLastByteId();
-  cacheInitialized = true;
 })();
 
 export function getNextByte(): ContentByte {
