@@ -1,4 +1,4 @@
-import type { UserProfile, Newsletter, Inspiration } from '../types';
+import type { UserProfile, Newsletter, Inspiration, ContentByte } from '../types';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -6,6 +6,8 @@ const STORAGE_KEYS = {
   NEWSLETTERS: 'focustab_newsletters',
   INSPIRATIONS: 'focustab_inspirations',
   SHOWN_INSPIRATIONS: 'focustab_shown_inspirations',
+  SAVED_BYTES: 'byteletters_saved_bytes',
+  BYTE_VOTES: 'byteletters_byte_votes',
 } as const;
 
 // Check if we're in Chrome extension context
@@ -181,4 +183,73 @@ export function generateInboxEmail(name: string): string {
   const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '');
   const random = Math.random().toString(36).substr(2, 6);
   return `${slug}-${random}@focustab.app`;
+}
+
+// =============================================================================
+// SAVED BYTES MANAGEMENT
+// =============================================================================
+
+export async function getSavedBytes(): Promise<ContentByte[]> {
+  const saved = await storage.get<ContentByte[]>(STORAGE_KEYS.SAVED_BYTES);
+  return saved || [];
+}
+
+export async function saveByteToCollection(byte: ContentByte): Promise<void> {
+  const saved = await getSavedBytes();
+  // Don't add duplicates
+  if (!saved.find(b => b.id === byte.id)) {
+    saved.unshift(byte); // Add to beginning
+    await storage.set(STORAGE_KEYS.SAVED_BYTES, saved);
+  }
+}
+
+export async function removeByteFromCollection(byteId: string): Promise<void> {
+  const saved = await getSavedBytes();
+  const filtered = saved.filter(b => b.id !== byteId);
+  await storage.set(STORAGE_KEYS.SAVED_BYTES, filtered);
+}
+
+export async function isByteSaved(byteId: string): Promise<boolean> {
+  const saved = await getSavedBytes();
+  return saved.some(b => b.id === byteId);
+}
+
+// =============================================================================
+// BYTE VOTES MANAGEMENT
+// =============================================================================
+
+interface ByteVote {
+  byteId: string;
+  vote: -1 | 0 | 1;
+  timestamp: string;
+}
+
+export async function getByteVotes(): Promise<Record<string, number>> {
+  const votes = await storage.get<ByteVote[]>(STORAGE_KEYS.BYTE_VOTES);
+  if (!votes) return {};
+
+  const voteMap: Record<string, number> = {};
+  votes.forEach(v => {
+    voteMap[v.byteId] = v.vote;
+  });
+  return voteMap;
+}
+
+export async function setByteVote(byteId: string, vote: -1 | 0 | 1): Promise<void> {
+  const votes = await storage.get<ByteVote[]>(STORAGE_KEYS.BYTE_VOTES) || [];
+  const existing = votes.findIndex(v => v.byteId === byteId);
+
+  if (existing >= 0) {
+    votes[existing].vote = vote;
+    votes[existing].timestamp = new Date().toISOString();
+  } else {
+    votes.push({ byteId, vote, timestamp: new Date().toISOString() });
+  }
+
+  await storage.set(STORAGE_KEYS.BYTE_VOTES, votes);
+}
+
+export async function getByteVote(byteId: string): Promise<number> {
+  const votes = await getByteVotes();
+  return votes[byteId] || 0;
 }
