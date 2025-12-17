@@ -19,7 +19,8 @@ function App() {
   const [currentByte, setCurrentByte] = useState<ContentByte | null>(null);
   const [queueSize, setQueueSize] = useState(SAMPLE_BYTES.length);
   const [showSettings, setShowSettings] = useState(false);
-  const [seenByteIds, setSeenByteIds] = useState<Set<string>>(new Set());
+  // Track seen bytes for deduplication (used when fetching from API)
+  const [, setSeenByteIds] = useState<Set<string>>(new Set());
 
   // Load initial data
   useEffect(() => {
