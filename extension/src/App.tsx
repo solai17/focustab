@@ -257,7 +257,7 @@ function App() {
             percentLived={percentLived}
           />
 
-          {/* Content Byte - "Reels for Text" */}
+          {/* Content Byte */}
           {currentByte ? (
             <ByteCard
               byte={currentByte}
@@ -269,10 +269,10 @@ function App() {
               queueSize={queueSize}
             />
           ) : (
-            <div className="text-center py-12">
-              <p className="text-smoke">No content available yet.</p>
-              <p className="text-smoke/60 text-sm mt-2">
-                Forward newsletters to your inbox to get started.
+            <div className="text-center py-16">
+              <p className="text-pearl text-lg mb-2">Your feed is empty</p>
+              <p className="text-smoke/60 text-sm">
+                Forward newsletters to start receiving bytes.
               </p>
             </div>
           )}
@@ -282,8 +282,7 @@ function App() {
         <footer className="mt-12 text-center opacity-0 animate-fade-in animation-delay-500">
           {profile.inboxEmail && (
             <p className="text-xs text-smoke/40">
-              Forward newsletters to{' '}
-              <code className="text-life/60">{profile.inboxEmail}</code>
+              <code className="text-life/50">{profile.inboxEmail}</code>
             </p>
           )}
         </footer>

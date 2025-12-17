@@ -1,7 +1,7 @@
 {
-  "name": "focustab-backend",
+  "name": "byteletters-api",
   "version": "1.0.0",
-  "description": "Backend API for FocusTab Chrome extension",
+  "description": "Backend API for ByteLetters",
   "main": "dist/index.js",
   "scripts": {
     "dev": "nodemon --exec ts-node src/index.ts",
@@ -13,9 +13,9 @@
     "db:studio": "prisma studio"
   },
   "keywords": [
-    "focustab",
+    "byteletters",
     "newsletter",
-    "productivity"
+    "wisdom"
   ],
   "author": "",
   "license": "MIT",
