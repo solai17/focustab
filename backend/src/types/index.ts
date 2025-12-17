@@ -48,7 +48,7 @@ export interface MailgunWebhookPayload {
 // CONTENT BYTE TYPES (v2.0)
 // =============================================================================
 
-export type ByteType = 'quote' | 'insight' | 'statistic' | 'action' | 'takeaway';
+export type ByteType = 'quote' | 'insight' | 'statistic' | 'action' | 'takeaway' | 'mental_model' | 'counterintuitive';
 
 export type ByteCategory =
   | 'wisdom'
