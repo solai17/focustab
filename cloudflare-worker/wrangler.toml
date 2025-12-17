@@ -1,0 +1,9 @@
+name = "byteletters-email-worker"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+API_URL = "https://api.byteletters.app"
+
+# Optional: Add webhook secret for security
+# WEBHOOK_SECRET = "your-secret-here"
