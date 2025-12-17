@@ -24,7 +24,7 @@ Return a JSON object:
   "readTimeMinutes": 5,
   "bytes": [
     {
-      "content": "The insight, rewritten to be punchy and memorable (1-2 sentences max)",
+      "content": "The insight, rewritten to be punchy and memorable (1-4 sentences, max 100 words, readable in 20-30 seconds)",
       "type": "quote|insight|statistic|action|takeaway|mental_model|counterintuitive",
       "author": "Original author if this is a direct quote, otherwise null",
       "context": "Brief context (5-8 words) e.g., 'on decision-making' or 'about creative work'",
@@ -104,10 +104,12 @@ ${truncatedContent}`,
     const parsed = JSON.parse(responseText);
 
     // Validate and clean up bytes
+    // Length: min 30 chars, max 500 chars (~100 words, readable in 20-30 seconds)
     const validBytes: ExtractedByte[] = (parsed.bytes || [])
       .filter((byte: any) => {
-        // Must have content and meet quality threshold (0.65+)
-        return byte.content && byte.content.length > 20 && (byte.qualityScore || 0.65) >= 0.65;
+        const len = byte.content?.length || 0;
+        // Must have content (30-500 chars) and meet quality threshold (0.65+)
+        return byte.content && len >= 30 && len <= 500 && (byte.qualityScore || 0.65) >= 0.65;
       })
       .map((byte: any) => ({
         content: byte.content.trim(),
