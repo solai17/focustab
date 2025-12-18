@@ -121,8 +121,12 @@ async function extractBytesWithGemini(
   try {
     console.log('  🤖 Using Gemini Flash 2.0 (FREE tier)...');
 
+    // Use configurable model (default: gemini-2.0-flash-001)
+    // Set GEMINI_MODEL=gemini-3-flash for best quality
+    const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash-001';
+
     const response = await gemini.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model,
       contents: BYTE_EXTRACTION_PROMPT + content.substring(0, 8000),
     });
 
