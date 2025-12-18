@@ -1,20 +1,25 @@
 /**
  * Newsletter Scraper - Fetch content from public newsletter archives
  *
- * Scrapes popular newsletter archives (Substack, etc.) and extracts
- * quality bytes using Claude.
+ * Uses Google Gemini Flash 2.0 (FREE: 1,500 requests/day)
+ * Falls back to Claude if Gemini fails
  *
- * Usage: npx ts-node scripts/scrape-newsletters.ts [--source=substack-url]
+ * Usage: npx ts-node scripts/scrape-newsletters.ts [--source=url]
  *
- * Note: Only scrape publicly available content. Respect robots.txt.
+ * Setup:
+ *   1. Get free API key: https://aistudio.google.com/apikey
+ *   2. Add to .env: GEMINI_API_KEY=your_key
  */
 
 import { PrismaClient } from '@prisma/client';
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenAI } from '@google/genai';
 import * as crypto from 'crypto';
 
 const prisma = new PrismaClient();
-const anthropic = new Anthropic();
+
+// Initialize Gemini client
+const geminiApiKey = process.env.GEMINI_API_KEY;
+const gemini = geminiApiKey ? new GoogleGenAI({ apiKey: geminiApiKey }) : null;
 
 // Public newsletter archives to scrape
 const PUBLIC_ARCHIVES = [
@@ -57,16 +62,16 @@ REQUIREMENTS:
 - Focus on timeless wisdom, not dated facts
 - Quality over quantity
 
-Return JSON:
+Return ONLY valid JSON (no markdown, no code blocks):
 {
   "bytes": [
     {
       "content": "The actual insight...",
-      "type": "insight|quote|statistic|action|takeaway|mental_model|counterintuitive",
+      "type": "insight",
       "author": "Name or null",
       "context": "Brief context (2-4 words)",
       "category": "wisdom|productivity|business|tech|life|creativity|leadership|finance|health",
-      "qualityScore": 0.0-1.0
+      "qualityScore": 0.85
     }
   ]
 }
@@ -104,36 +109,46 @@ async function fetchContent(url: string): Promise<string | null> {
   }
 }
 
-async function extractBytesWithClaude(
+async function extractBytesWithGemini(
   content: string,
   sourceName: string
 ): Promise<any[]> {
+  if (!gemini) {
+    console.error('  ❌ Gemini API key not configured. Set GEMINI_API_KEY in .env');
+    return [];
+  }
+
   try {
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
-      messages: [
-        {
-          role: 'user',
-          content: BYTE_EXTRACTION_PROMPT + content.substring(0, 8000),
-        },
-      ],
+    console.log('  🤖 Using Gemini Flash 2.0 (FREE tier)...');
+
+    const response = await gemini.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: BYTE_EXTRACTION_PROMPT + content.substring(0, 8000),
     });
 
-    const responseText =
-      response.content[0].type === 'text' ? response.content[0].text : '';
+    const responseText = response.text || '';
 
-    // Parse JSON from response
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.error('  ❌ Could not find JSON in Claude response');
+    // Parse JSON from response (handle potential markdown wrapping)
+    let jsonStr = responseText;
+
+    // Remove markdown code blocks if present
+    const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (jsonMatch) {
+      jsonStr = jsonMatch[1];
+    }
+
+    // Find JSON object
+    const objectMatch = jsonStr.match(/\{[\s\S]*\}/);
+    if (!objectMatch) {
+      console.error('  ❌ Could not find JSON in Gemini response');
+      console.log('  Response:', responseText.substring(0, 200));
       return [];
     }
 
-    const parsed = JSON.parse(jsonMatch[0]);
+    const parsed = JSON.parse(objectMatch[0]);
     return parsed.bytes || [];
   } catch (error) {
-    console.error(`  ❌ Claude extraction error:`, error);
+    console.error(`  ❌ Gemini extraction error:`, error);
     return [];
   }
 }
@@ -195,9 +210,8 @@ async function scrapeAndProcess(
   });
   console.log(`   ✓ Created edition`);
 
-  // 4. Extract bytes with Claude
-  console.log(`   🤖 Extracting bytes with Claude...`);
-  const bytes = await extractBytesWithClaude(content, name);
+  // 4. Extract bytes with Gemini (FREE!)
+  const bytes = await extractBytesWithGemini(content, name);
   console.log(`   ✓ Extracted ${bytes.length} bytes`);
 
   // 5. Save bytes to database
@@ -231,8 +245,18 @@ async function scrapeAndProcess(
 }
 
 async function main() {
-  console.log('🕷️  ByteLetters Newsletter Scraper\n');
+  console.log('🕷️  ByteLetters Newsletter Scraper');
+  console.log('   Using: Gemini Flash 2.0 (FREE: 1,500 req/day)\n');
   console.log('='.repeat(50));
+
+  if (!geminiApiKey) {
+    console.error('\n❌ GEMINI_API_KEY not set!');
+    console.log('\nTo get a FREE API key:');
+    console.log('  1. Go to: https://aistudio.google.com/apikey');
+    console.log('  2. Create a key');
+    console.log('  3. Add to .env: GEMINI_API_KEY=your_key\n');
+    process.exit(1);
+  }
 
   // Check for command line URL
   const customUrl = process.argv.find((arg) => arg.startsWith('--source='));
@@ -249,6 +273,9 @@ async function main() {
         archive.category
       );
       totalBytes += count;
+
+      // Small delay to respect rate limits (10 RPM = 1 per 6 seconds)
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
     console.log('\n' + '='.repeat(50));

@@ -1,9 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ProcessedNewsletter, ProcessedEdition, ExtractedByte, ByteType, ByteCategory } from '../types';
+import { extractBytesWithGemini, isGeminiAvailable } from './gemini';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+// Use Gemini (FREE) as primary, Claude as fallback
+const USE_GEMINI_PRIMARY = process.env.USE_GEMINI_PRIMARY !== 'false';
 
 // =============================================================================
 // v2.0 CONTENT BYTE EXTRACTION
@@ -75,7 +79,32 @@ export async function processEditionWithClaude(
   textContent: string,
   sourceName: string
 ): Promise<ProcessedEdition> {
+  // Try Gemini first (FREE: 1,500 requests/day)
+  if (USE_GEMINI_PRIMARY && isGeminiAvailable()) {
+    try {
+      console.log(`[AI] Using Gemini (FREE) for: ${sourceName}`);
+      const geminiBytes = await extractBytesWithGemini(textContent, sourceName);
+
+      if (geminiBytes.length > 0) {
+        return {
+          summary: `Processed ${geminiBytes.length} insights from ${sourceName}`,
+          readTimeMinutes: Math.ceil(textContent.split(/\s+/).length / 200),
+          bytes: geminiBytes.map((byte) => ({
+            ...byte,
+            type: validateByteType(byte.type),
+            category: validateByteCategory(byte.category),
+          })),
+        };
+      }
+      console.log('[AI] Gemini returned no bytes, falling back to Claude');
+    } catch (error) {
+      console.error('[AI] Gemini failed, falling back to Claude:', error);
+    }
+  }
+
+  // Fallback to Claude (paid)
   try {
+    console.log(`[AI] Using Claude (paid) for: ${sourceName}`);
     // Truncate content if too long
     const truncatedContent = textContent.slice(0, 20000);
 
