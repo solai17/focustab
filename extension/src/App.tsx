@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Settings as SettingsIcon, Bookmark } from 'lucide-react';
 import type { UserProfile, ContentByte, VoteValue } from './types';
 import {
@@ -6,12 +6,6 @@ import {
   saveUserProfile,
   calculateSundaysRemaining,
   calculatePercentLived,
-  saveByteToCollection,
-  removeByteFromCollection,
-  isByteSaved,
-  setByteVote,
-  getByteVote,
-  getSavedBytes,
 } from './utils/storage';
 import {
   initializeAuth,
@@ -20,7 +14,14 @@ import {
   clearAuth,
   type AuthUser,
 } from './services/auth';
-import { SAMPLE_BYTES, getNextByte } from './data/mockData';
+import {
+  fetchNextByte,
+  fetchSavedBytes,
+  voteByte,
+  toggleSaveByte,
+  trackByteView,
+} from './services/api';
+import { SAMPLE_BYTES, getNextByte as getNextMockByte } from './data/mockData';
 import { MortalityBar } from './components/MortalityBar';
 import { ByteCard } from './components/ByteCard';
 import { Onboarding } from './components/Onboarding';
@@ -38,32 +39,41 @@ function userToProfile(user: AuthUser): UserProfile {
   };
 }
 
-// Load engagement state for a byte
-async function loadByteWithEngagement(byte: ContentByte): Promise<ContentByte> {
-  const [saved, vote] = await Promise.all([
-    isByteSaved(byte.id),
-    getByteVote(byte.id),
-  ]);
-
-  return {
-    ...byte,
-    userEngagement: {
-      vote: vote as -1 | 0 | 1,
-      isSaved: saved,
-    },
-  };
-}
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [currentByte, setCurrentByte] = useState<ContentByte | null>(null);
   const [savedBytes, setSavedBytes] = useState<ContentByte[]>([]);
-  const [queueSize, setQueueSize] = useState(SAMPLE_BYTES.length);
+  const [queueSize, setQueueSize] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
-  // Track seen bytes for deduplication (used when fetching from API)
-  const [, setSeenByteIds] = useState<Set<string>>(new Set());
+  // Track if using mock data (offline fallback)
+  const usingMockData = useRef(false);
+
+  // Helper to load byte and saved bytes from API
+  async function loadFromApi(): Promise<{ byte: ContentByte | null; queueSize: number; saved: ContentByte[] }> {
+    try {
+      const [nextByteResult, savedResult] = await Promise.all([
+        fetchNextByte(),
+        fetchSavedBytes(),
+      ]);
+      usingMockData.current = false;
+      return {
+        byte: nextByteResult.byte,
+        queueSize: nextByteResult.queueSize,
+        saved: savedResult,
+      };
+    } catch (error) {
+      console.log('API fetch failed, falling back to mock data:', error);
+      usingMockData.current = true;
+      return {
+        byte: getNextMockByte(),
+        queueSize: SAMPLE_BYTES.length,
+        saved: [],
+      };
+    }
+  }
 
   // Load initial data with auto-login
   useEffect(() => {
@@ -78,14 +88,10 @@ function App() {
           await saveUserProfile(userProfile);
           setProfile(userProfile);
 
-          // Get first byte with engagement state
-          const byte = getNextByte();
-          const byteWithEngagement = await loadByteWithEngagement(byte);
-          setCurrentByte(byteWithEngagement);
-          setSeenByteIds(new Set([byte.id]));
-
-          // Load saved bytes
-          const saved = await getSavedBytes();
+          // Load bytes and saved bytes from API
+          const { byte, queueSize: size, saved } = await loadFromApi();
+          setCurrentByte(byte);
+          setQueueSize(size);
           setSavedBytes(saved);
           return;
         }
@@ -106,14 +112,10 @@ function App() {
               await saveUserProfile(userProfile);
               setProfile(userProfile);
 
-              // Get first byte with engagement state
-              const byte = getNextByte();
-              const byteWithEngagement = await loadByteWithEngagement(byte);
-              setCurrentByte(byteWithEngagement);
-              setSeenByteIds(new Set([byte.id]));
-
-              // Load saved bytes
-              const saved = await getSavedBytes();
+              // Load bytes and saved bytes from API
+              const { byte, queueSize: size, saved } = await loadFromApi();
+              setCurrentByte(byte);
+              setQueueSize(size);
               setSavedBytes(saved);
               return;
             }
@@ -128,15 +130,11 @@ function App() {
         setProfile(savedProfile);
 
         if (savedProfile) {
-          // Get first byte with engagement state
-          const byte = getNextByte();
-          const byteWithEngagement = await loadByteWithEngagement(byte);
-          setCurrentByte(byteWithEngagement);
-          setSeenByteIds(new Set([byte.id]));
-
-          // Load saved bytes
-          const saved = await getSavedBytes();
-          setSavedBytes(saved);
+          // Use mock data for offline/demo mode
+          usingMockData.current = true;
+          const byte = getNextMockByte();
+          setCurrentByte(byte);
+          setQueueSize(SAMPLE_BYTES.length);
         }
       } catch (error) {
         console.error('Failed to load data:', error);
@@ -153,79 +151,147 @@ function App() {
     await saveUserProfile(newProfile);
     setProfile(newProfile);
 
-    // Get first byte with engagement state
-    const byte = getNextByte();
-    const byteWithEngagement = await loadByteWithEngagement(byte);
-    setCurrentByte(byteWithEngagement);
-    setSeenByteIds(new Set([byte.id]));
+    // Try to load from API, fallback to mock
+    const { byte, queueSize: size, saved } = await loadFromApi();
+    setCurrentByte(byte);
+    setQueueSize(size);
+    setSavedBytes(saved);
   };
 
   // Handle vote
   const handleVote = useCallback(async (byteId: string, vote: VoteValue) => {
-    // Persist vote to storage
-    await setByteVote(byteId, vote as -1 | 0 | 1);
+    if (!currentByte || currentByte.id !== byteId) return;
 
-    if (currentByte && currentByte.id === byteId) {
-      const prevVote = currentByte.userEngagement?.vote || 0;
-      setCurrentByte({
-        ...currentByte,
-        userEngagement: {
-          vote,
-          isSaved: currentByte.userEngagement?.isSaved || false,
-        },
-        engagement: {
-          ...currentByte.engagement,
-          upvotes: currentByte.engagement.upvotes + (vote === 1 ? 1 : 0) - (prevVote === 1 ? 1 : 0),
-          downvotes: currentByte.engagement.downvotes + (vote === -1 ? 1 : 0) - (prevVote === -1 ? 1 : 0),
-        },
-      });
+    const prevVote = currentByte.userEngagement?.vote || 0;
+
+    // Optimistic update
+    setCurrentByte({
+      ...currentByte,
+      userEngagement: {
+        vote,
+        isSaved: currentByte.userEngagement?.isSaved || false,
+      },
+      engagement: {
+        ...currentByte.engagement,
+        upvotes: currentByte.engagement.upvotes + (vote === 1 ? 1 : 0) - (prevVote === 1 ? 1 : 0),
+        downvotes: currentByte.engagement.downvotes + (vote === -1 ? 1 : 0) - (prevVote === -1 ? 1 : 0),
+      },
+    });
+
+    // Send to API (if online)
+    if (!usingMockData.current) {
+      try {
+        await voteByte(byteId, vote);
+      } catch (error) {
+        console.error('Failed to sync vote:', error);
+        // Revert on failure
+        setCurrentByte({
+          ...currentByte,
+          userEngagement: { vote: prevVote, isSaved: currentByte.userEngagement?.isSaved || false },
+        });
+      }
     }
   }, [currentByte]);
 
   // Handle save
   const handleSave = useCallback(async (byteId: string) => {
-    if (currentByte && currentByte.id === byteId) {
-      const wasSaved = currentByte.userEngagement?.isSaved || false;
-      const nowSaved = !wasSaved;
+    if (!currentByte || currentByte.id !== byteId) return;
 
-      // Persist to storage
-      if (nowSaved) {
-        await saveByteToCollection(currentByte);
-        setSavedBytes(prev => [currentByte, ...prev.filter(b => b.id !== byteId)]);
-      } else {
-        await removeByteFromCollection(byteId);
-        setSavedBytes(prev => prev.filter(b => b.id !== byteId));
+    const wasSaved = currentByte.userEngagement?.isSaved || false;
+    const nowSaved = !wasSaved;
+
+    // Optimistic update
+    setCurrentByte({
+      ...currentByte,
+      userEngagement: {
+        vote: currentByte.userEngagement?.vote || 0,
+        isSaved: nowSaved,
+      },
+    });
+
+    if (nowSaved) {
+      setSavedBytes(prev => [{ ...currentByte, userEngagement: { vote: currentByte.userEngagement?.vote || 0, isSaved: true } }, ...prev.filter(b => b.id !== byteId)]);
+    } else {
+      setSavedBytes(prev => prev.filter(b => b.id !== byteId));
+    }
+
+    // Send to API (if online)
+    if (!usingMockData.current) {
+      try {
+        const result = await toggleSaveByte(byteId);
+        // Sync with actual server state
+        if (result.isSaved !== nowSaved) {
+          setCurrentByte(prev => prev ? { ...prev, userEngagement: { vote: prev.userEngagement?.vote || 0, isSaved: result.isSaved } } : null);
+          if (result.isSaved) {
+            setSavedBytes(prev => [currentByte, ...prev.filter(b => b.id !== byteId)]);
+          } else {
+            setSavedBytes(prev => prev.filter(b => b.id !== byteId));
+          }
+        }
+      } catch (error) {
+        console.error('Failed to sync save:', error);
+        // Revert on failure
+        setCurrentByte({
+          ...currentByte,
+          userEngagement: { vote: currentByte.userEngagement?.vote || 0, isSaved: wasSaved },
+        });
+        if (wasSaved) {
+          setSavedBytes(prev => [currentByte, ...prev.filter(b => b.id !== byteId)]);
+        } else {
+          setSavedBytes(prev => prev.filter(b => b.id !== byteId));
+        }
       }
-
-      setCurrentByte({
-        ...currentByte,
-        userEngagement: {
-          vote: currentByte.userEngagement?.vote || 0,
-          isSaved: nowSaved,
-        },
-      });
     }
   }, [currentByte]);
 
   // Handle share
   const handleShare = useCallback((byteId: string) => {
     console.log('Share:', byteId);
-    // In production, this would track the share
+    // TODO: Implement share tracking on backend
   }, []);
 
   // Handle view tracking
-  const handleView = useCallback((byteId: string, dwellTimeMs: number) => {
-    console.log('View:', byteId, 'Dwell time:', dwellTimeMs, 'ms');
-    // In production, this would call the API
+  const handleView = useCallback(async (byteId: string, dwellTimeMs: number) => {
+    // Only track views if using the API
+    if (!usingMockData.current) {
+      try {
+        await trackByteView(byteId, dwellTimeMs);
+      } catch (error) {
+        console.error('Failed to track view:', error);
+      }
+    }
   }, []);
 
   // Handle next byte
   const handleNext = useCallback(async () => {
-    const byte = getNextByte();
-    const byteWithEngagement = await loadByteWithEngagement(byte);
-    setCurrentByte(byteWithEngagement);
-    setSeenByteIds(prev => new Set([...prev, byte.id]));
-    setQueueSize(prev => Math.max(0, prev - 1));
+    if (usingMockData.current) {
+      // Offline/demo mode - use mock data
+      const byte = getNextMockByte();
+      setCurrentByte(byte);
+      setQueueSize(prev => Math.max(0, prev - 1));
+    } else {
+      // Fetch from API
+      try {
+        const { byte, queueSize: size } = await fetchNextByte();
+        if (byte) {
+          setCurrentByte(byte);
+          setQueueSize(size);
+        } else {
+          // No more bytes from API, fall back to mock
+          usingMockData.current = true;
+          const mockByte = getNextMockByte();
+          setCurrentByte(mockByte);
+          setQueueSize(SAMPLE_BYTES.length);
+        }
+      } catch (error) {
+        console.error('Failed to fetch next byte:', error);
+        // Fall back to mock on error
+        usingMockData.current = true;
+        const byte = getNextMockByte();
+        setCurrentByte(byte);
+        setQueueSize(SAMPLE_BYTES.length);
+      }
+    }
   }, []);
 
   // Update profile
@@ -262,11 +328,13 @@ function App() {
     } catch {
       // Ignore if chrome is not available
     }
+
+    // Reset state
+    usingMockData.current = false;
     setProfile(null);
     setCurrentByte(null);
     setSavedBytes([]);
-    setSeenByteIds(new Set());
-    setQueueSize(SAMPLE_BYTES.length);
+    setQueueSize(0);
   };
 
   // Loading state
@@ -421,7 +489,7 @@ function App() {
                       )}
                       <button
                         onClick={async () => {
-                          await removeByteFromCollection(byte.id);
+                          // Optimistic update
                           setSavedBytes(prev => prev.filter(b => b.id !== byte.id));
                           if (currentByte?.id === byte.id) {
                             setCurrentByte({
@@ -432,6 +500,27 @@ function App() {
                                 isSaved: false,
                               },
                             });
+                          }
+
+                          // Call API to unsave (if online)
+                          if (!usingMockData.current) {
+                            try {
+                              await toggleSaveByte(byte.id);
+                            } catch (error) {
+                              console.error('Failed to unsave byte:', error);
+                              // Revert on failure
+                              setSavedBytes(prev => [byte, ...prev]);
+                              if (currentByte?.id === byte.id) {
+                                setCurrentByte({
+                                  ...currentByte,
+                                  userEngagement: {
+                                    ...currentByte.userEngagement,
+                                    vote: currentByte.userEngagement?.vote || 0,
+                                    isSaved: true,
+                                  },
+                                });
+                              }
+                            }
                           }
                         }}
                         className="mt-3 text-xs text-smoke/50 hover:text-rose transition-colors"
