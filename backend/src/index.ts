@@ -13,6 +13,7 @@ import webhookRoutes from './routes/webhooks';
 import feedRoutes from './routes/feed';
 import discoverRoutes from './routes/discover';
 import testFeedRoutes from './routes/testFeed';
+import internalRoutes from './routes/internal';
 import { isMockDb } from './services/db';
 
 const app = express();
@@ -69,6 +70,7 @@ app.use('/webhooks', webhookRoutes);
 app.use('/feed', feedRoutes);        // v2.0 - Content feed with engagement
 app.use('/discover', discoverRoutes); // v2.0 - Content discovery
 app.use('/test-feed', testFeedRoutes); // Test routes (no auth, works with mock db)
+app.use('/internal', internalRoutes); // Cron/admin endpoints (protected)
 
 // 404 handler
 app.use((req, res) => {
@@ -106,6 +108,11 @@ app.listen(PORT, () => {
   👍 Vote:     POST /test-feed/bytes/:id/vote
   📊 Sources:  GET  /test-feed/sources
   📈 Stats:    GET  /test-feed/stats
+
+  ⚙️  Internal Endpoints (cron/admin):
+  🔄 Queue:    POST /internal/process-queue
+  📊 Stats:    GET  /internal/queue-stats
+  🔁 Retry:    POST /internal/reset-failed
   `);
 });
 

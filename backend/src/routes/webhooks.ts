@@ -4,7 +4,6 @@ import crypto from 'crypto';
 import { prisma } from '../services/db';
 import {
   processNewsletterWithClaude,
-  processEditionWithClaude,
   categorizeNewsletterSource,
 } from '../services/claude';
 import { verifyMailgunSignature, htmlToText, extractSenderName } from '../services/utils';
@@ -95,7 +94,7 @@ router.post('/cloudflare', async (req: Request, res: Response) => {
     // Find or create newsletter source
     const source = await findOrCreateSource(senderEmail, finalSenderName, finalTextContent);
 
-    // Create new edition
+    // Create new edition with pending status (will be processed by queue)
     const edition = await prisma.edition.create({
       data: {
         sourceId: source.id,
@@ -104,16 +103,15 @@ router.post('/cloudflare', async (req: Request, res: Response) => {
         rawContent: htmlContent || '',
         textContent: finalTextContent,
         isProcessed: false,
+        processingStatus: 'pending', // Queue for batch processing
+        processAttempts: 0,
       },
     });
 
     // Link user to source
     await ensureUserSubscription(user.id, source.id, 'forwarded');
 
-    console.log(`[Cloudflare] New edition: ${edition.id} for source ${source.name}`);
-
-    // Process with Claude asynchronously
-    processEditionAsync(edition.id, finalSubject, finalTextContent, source.name);
+    console.log(`[Cloudflare] New edition queued: ${edition.id} for source ${source.name}`);
 
     // Create legacy Newsletter record for backward compatibility
     await createLegacyNewsletterFromCloudflare(
@@ -241,7 +239,7 @@ router.post('/mailgun', upload.none(), async (req: Request, res: Response) => {
     // Find or create newsletter source
     const source = await findOrCreateSource(senderEmail, senderName, textContent);
 
-    // Create new edition
+    // Create new edition with pending status (will be processed by queue)
     const edition = await prisma.edition.create({
       data: {
         sourceId: source.id,
@@ -250,16 +248,15 @@ router.post('/mailgun', upload.none(), async (req: Request, res: Response) => {
         rawContent: htmlContent,
         textContent,
         isProcessed: false,
+        processingStatus: 'pending', // Queue for batch processing
+        processAttempts: 0,
       },
     });
 
     // Link user to source
     await ensureUserSubscription(user.id, source.id, 'forwarded');
 
-    console.log(`New edition created: ${edition.id} for source ${source.name}`);
-
-    // Process with Claude asynchronously
-    processEditionAsync(edition.id, subject, textContent, source.name);
+    console.log(`[Mailgun] New edition queued: ${edition.id} for source ${source.name}`);
 
     // Also create legacy Newsletter record for backward compatibility
     await createLegacyNewsletter(user.id, payload, textContent, senderName);
@@ -348,63 +345,6 @@ async function ensureUserSubscription(
     where: { id: sourceId },
     data: { subscriberCount: { increment: 1 } },
   });
-}
-
-/**
- * Process edition with Claude in the background
- */
-async function processEditionAsync(
-  editionId: string,
-  subject: string,
-  textContent: string,
-  sourceName: string
-): Promise<void> {
-  try {
-    console.log(`Processing edition ${editionId} with Claude...`);
-
-    const processed = await processEditionWithClaude(subject, textContent, sourceName);
-
-    // Update edition with processed content
-    await prisma.edition.update({
-      where: { id: editionId },
-      data: {
-        summary: processed.summary,
-        readTimeMinutes: processed.readTimeMinutes,
-        isProcessed: true,
-        processedAt: new Date(),
-      },
-    });
-
-    // Create content bytes
-    if (processed.bytes.length > 0) {
-      await prisma.contentByte.createMany({
-        data: processed.bytes.map((byte) => ({
-          editionId,
-          content: byte.content,
-          type: byte.type,
-          author: byte.author,
-          context: byte.context,
-          category: byte.category,
-          qualityScore: byte.qualityScore,
-        })),
-      });
-    }
-
-    console.log(
-      `Edition ${editionId} processed: ${processed.bytes.length} bytes extracted`
-    );
-  } catch (error) {
-    console.error(`Failed to process edition ${editionId}:`, error);
-
-    await prisma.edition.update({
-      where: { id: editionId },
-      data: {
-        isProcessed: true,
-        processingError: error instanceof Error ? error.message : 'Unknown error',
-        processedAt: new Date(),
-      },
-    });
-  }
 }
 
 /**
@@ -519,7 +459,7 @@ router.post('/test', async (req: Request, res: Response) => {
     // Find or create source
     const source = await findOrCreateSource(finalSenderEmail, finalSenderName, content);
 
-    // Create edition
+    // Create edition with pending status (queued for processing)
     const edition = await prisma.edition.create({
       data: {
         sourceId: source.id,
@@ -528,19 +468,19 @@ router.post('/test', async (req: Request, res: Response) => {
         rawContent: content,
         textContent: content,
         isProcessed: false,
+        processingStatus: 'pending',
+        processAttempts: 0,
       },
     });
 
     // Link user
     await ensureUserSubscription(user.id, source.id, 'test');
 
-    // Process
-    await processEditionAsync(edition.id, subject, content, source.name);
-
     res.json({
-      message: 'Test newsletter created',
+      message: 'Test newsletter queued for processing',
       editionId: edition.id,
       sourceId: source.id,
+      status: 'pending',
     });
   } catch (error) {
     console.error('Test webhook error:', error);
