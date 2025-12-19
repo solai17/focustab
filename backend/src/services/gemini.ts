@@ -81,8 +81,7 @@ export async function extractBytesWithGemini(
 
   try {
     // Use Gemini 3 Flash for best quality (outperforms 2.5 Pro!)
-    // Falls back to 2.0-flash if 3-flash unavailable
-    const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash-001';
+    const model = process.env.GEMINI_MODEL || 'gemini-3-flash';
 
     const response = await gemini.models.generateContent({
       model,
