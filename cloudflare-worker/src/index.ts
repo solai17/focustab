@@ -1,219 +1,117 @@
-/**
- * ByteLetters - Cloudflare Email Worker
- *
- * This worker receives emails via Cloudflare Email Routing and forwards
- * them to the ByteLetters backend API for processing.
- */
+// Cloudflare Email Worker for ByteLetters
+// This worker receives emails, parses them, and forwards to the backend API
+
+import PostalMime from 'postal-mime';
 
 export interface Env {
-  API_URL: string;
-  WEBHOOK_SECRET?: string;
+    // Your backend API URL
+    API_URL: string;
+    // Optional: shared secret for webhook authentication
+    WEBHOOK_SECRET?: string;
 }
 
 export default {
-  async email(message: EmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
-    const apiUrl = env.API_URL || 'https://api.byteletters.app';
-    const webhookUrl = `${apiUrl}/webhooks/cloudflare`;
+    async email(message: ForwardableEmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
+        try {
+            // Get basic email info from headers
+            const recipientEmail = message.to.toLowerCase();
+            const senderEmail = message.from.toLowerCase();
+            const subject = message.headers.get('subject') || 'No Subject';
 
-    try {
-      // Read the raw email content
-      const rawEmail = await streamToText(message.raw);
+            console.log(`Processing email from ${senderEmail} to ${recipientEmail}`);
 
-      // Parse email content
-      const { htmlContent, textContent } = parseEmailContent(rawEmail);
+            // Parse the full email content
+            const rawEmail = await streamToArrayBuffer(message.raw);
+            const parser = new PostalMime();
+            const parsed = await parser.parse(rawEmail);
 
-      // Extract sender name from the "from" header
-      const senderName = extractSenderName(message.from);
+            // Extract content (prefer HTML, fallback to text)
+            const htmlContent = parsed.html || '';
+            const textContent = parsed.text || '';
 
-      // Prepare payload for backend
-      const payload = {
-        recipient: message.to,
-        sender: message.from,
-        senderName: senderName,
-        subject: message.headers.get('subject') || 'No Subject',
-        htmlContent: htmlContent,
-        textContent: textContent,
-        receivedAt: new Date().toISOString(),
-        messageId: message.headers.get('message-id') || '',
-      };
+            // Extract sender name from "From" header
+            const fromHeader = message.headers.get('from') || senderEmail;
+            const senderName = extractSenderName(fromHeader);
 
-      console.log(`Processing email from ${message.from} to ${message.to}`);
+            // Prepare payload for backend
+            const payload = {
+                recipient: recipientEmail,
+                sender: senderEmail,
+                senderName: senderName,
+                subject: subject,
+                htmlContent: htmlContent,
+                textContent: textContent,
+                receivedAt: new Date().toISOString(),
+            };
 
-      // Send to backend
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
+            // Forward to backend API
+            const apiUrl = env.API_URL || 'https://api.byteletters.app';
+            const webhookUrl = `${apiUrl}/webhooks/cloudflare`;
 
-      // Add webhook secret if configured
-      if (env.WEBHOOK_SECRET) {
-        headers['X-Webhook-Secret'] = env.WEBHOOK_SECRET;
-      }
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json',
+            };
 
-      const response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-      });
+            // Add authentication if secret is configured
+            if (env.WEBHOOK_SECRET) {
+                headers['X-Webhook-Secret'] = env.WEBHOOK_SECRET;
+            }
 
-      const responseText = await response.text();
-      console.log(`Backend response: ${response.status} - ${responseText}`);
+            const response = await fetch(webhookUrl, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(payload),
+            });
 
-      if (!response.ok) {
-        console.error(`Backend error: ${response.status} - ${responseText}`);
-        // Don't throw - we still want to accept the email
-      }
-    } catch (error) {
-      console.error('Email processing error:', error);
-      // Don't throw - accept the email even if processing fails
-      // This prevents Cloudflare from marking it as "Dropped"
-    }
-  },
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`Backend API error: ${response.status} - ${errorText}`);
+                // Don't throw - we don't want to reject the email
+            } else {
+                const result = await response.json();
+                console.log(`Email processed successfully:`, result);
+            }
+        } catch (error) {
+            console.error('Error processing email:', error);
+            // Log but don't throw - accept the email even if processing fails
+        }
+    },
 };
 
 /**
- * Convert a ReadableStream to text
+ * Convert a ReadableStream to ArrayBuffer
  */
-async function streamToText(stream: ReadableStream<Uint8Array>): Promise<string> {
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let result = '';
+async function streamToArrayBuffer(stream: ReadableStream<Uint8Array>): Promise<ArrayBuffer> {
+    const reader = stream.getReader();
+    const chunks: Uint8Array[] = [];
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    result += decoder.decode(value, { stream: true });
-  }
-
-  result += decoder.decode(); // Flush any remaining bytes
-  return result;
-}
-
-/**
- * Parse email content to extract HTML and text parts
- */
-function parseEmailContent(rawEmail: string): { htmlContent: string; textContent: string } {
-  let htmlContent = '';
-  let textContent = '';
-
-  // Check if it's a multipart email
-  const boundaryMatch = rawEmail.match(/boundary="?([^"\r\n]+)"?/i);
-
-  if (boundaryMatch) {
-    const boundary = boundaryMatch[1];
-    const parts = rawEmail.split(`--${boundary}`);
-
-    for (const part of parts) {
-      const contentTypeMatch = part.match(/Content-Type:\s*([^;\r\n]+)/i);
-      if (!contentTypeMatch) continue;
-
-      const contentType = contentTypeMatch[1].toLowerCase();
-
-      // Find the content after headers (separated by double newline)
-      const contentMatch = part.match(/\r?\n\r?\n([\s\S]*)/);
-      if (!contentMatch) continue;
-
-      let content = contentMatch[1].trim();
-
-      // Check for content transfer encoding
-      const encodingMatch = part.match(/Content-Transfer-Encoding:\s*([^\r\n]+)/i);
-      if (encodingMatch) {
-        const encoding = encodingMatch[1].toLowerCase().trim();
-        if (encoding === 'base64') {
-          try {
-            content = atob(content.replace(/\s/g, ''));
-          } catch (e) {
-            console.error('Base64 decode error:', e);
-          }
-        } else if (encoding === 'quoted-printable') {
-          content = decodeQuotedPrintable(content);
-        }
-      }
-
-      if (contentType.includes('text/html')) {
-        htmlContent = content;
-      } else if (contentType.includes('text/plain')) {
-        textContent = content;
-      }
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) chunks.push(value);
     }
-  } else {
-    // Simple email without multipart
-    const contentMatch = rawEmail.match(/\r?\n\r?\n([\s\S]*)/);
-    if (contentMatch) {
-      const body = contentMatch[1].trim();
 
-      // Check if it looks like HTML
-      if (body.includes('<html') || body.includes('<body') || body.includes('<p>')) {
-        htmlContent = body;
-        textContent = stripHtml(body);
-      } else {
-        textContent = body;
-      }
+    // Concatenate all chunks
+    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const result = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+        result.set(chunk, offset);
+        offset += chunk.length;
     }
-  }
 
-  // If we only have HTML, extract text from it
-  if (htmlContent && !textContent) {
-    textContent = stripHtml(htmlContent);
-  }
-
-  return { htmlContent, textContent };
+    return result.buffer;
 }
 
 /**
- * Decode quoted-printable encoding
- */
-function decodeQuotedPrintable(str: string): string {
-  return str
-    .replace(/=\r?\n/g, '') // Remove soft line breaks
-    .replace(/=([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
-}
-
-/**
- * Strip HTML tags to get plain text
- */
-function stripHtml(html: string): string {
-  return html
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/**
- * Extract display name from email address
+ * Extract sender name from "From" header
+ * Handles formats like: "Name <email@domain.com>" or just "email@domain.com"
  */
 function extractSenderName(from: string): string {
-  // Handle format: "Name" <email@example.com> or Name <email@example.com>
-  const nameMatch = from.match(/^"?([^"<]+)"?\s*</);
-  if (nameMatch) {
-    return nameMatch[1].trim();
-  }
-
-  // If no name, use the part before @ in the email
-  const emailMatch = from.match(/<?([^@<]+)@/);
-  if (emailMatch) {
-    return emailMatch[1].trim();
-  }
-
-  return from;
-}
-
-/**
- * Type definition for Cloudflare Email Message
- */
-interface EmailMessage {
-  readonly from: string;
-  readonly to: string;
-  readonly headers: Headers;
-  readonly raw: ReadableStream<Uint8Array>;
-  readonly rawSize: number;
-  setReject(reason: string): void;
-  forward(rcptTo: string, headers?: Headers): Promise<void>;
+    // Format: "Name <email@domain.com>" or just "email@domain.com"
+    const match = from.match(/^"?([^"<]+)"?\s*<?/);
+    if (match && match[1]) {
+        return match[1].trim();
+    }
+    return from.split('@')[0];
 }

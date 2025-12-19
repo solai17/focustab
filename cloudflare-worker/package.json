@@ -1,16 +1,19 @@
 {
-  "name": "byteletters-email-worker",
-  "version": "1.0.0",
-  "description": "Cloudflare Email Worker for ByteLetters",
-  "main": "src/index.ts",
-  "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "tail": "wrangler tail"
-  },
-  "devDependencies": {
-    "@cloudflare/workers-types": "^4.20240117.0",
-    "typescript": "^5.3.3",
-    "wrangler": "^3.24.0"
-  }
+    "name": "byteletters-email-worker",
+    "version": "1.0.0",
+    "description": "Cloudflare Email Worker for ByteLetters newsletter processing",
+    "main": "src/index.ts",
+    "scripts": {
+        "dev": "wrangler dev",
+        "deploy": "wrangler deploy",
+        "tail": "wrangler tail"
+    },
+    "dependencies": {
+        "postal-mime": "^2.2.0"
+    },
+    "devDependencies": {
+        "@cloudflare/workers-types": "^4.20240117.0",
+        "typescript": "^5.3.3",
+        "wrangler": "^3.22.4"
+    }
 }
