@@ -112,7 +112,7 @@ export function Settings({ profile, onClose, onUpdate, onReset }: SettingsProps)
           <div className="pt-2">
             <label className="flex items-center gap-2 text-sm text-smoke mb-3">
               <Sparkles className="w-4 h-4" />
-              Content Discovery
+              Discovery
             </label>
             <div className="flex items-start gap-4 p-4 bg-slate border border-ash rounded-lg">
               <button
@@ -129,12 +129,12 @@ export function Settings({ profile, onClose, onUpdate, onReset }: SettingsProps)
               </button>
               <div className="flex-1">
                 <h3 className="text-pearl text-sm font-medium mb-1">
-                  Enable Recommendations
+                  Community picks
                 </h3>
                 <p className="text-xs text-smoke leading-relaxed">
                   {enableRecommendations
-                    ? "You'll see popular content from newsletters you don't follow yet."
-                    : "You'll only see content from newsletters you've forwarded."}
+                    ? "See curated content from the community."
+                    : "Only show content from your newsletters."}
                 </p>
               </div>
             </div>

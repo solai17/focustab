@@ -1,9 +1,9 @@
 {
-  "name": "focustab",
+  "name": "byteletters",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Transform every new tab into a reminder of what matters",
+  "description": "Your newsletters, distilled. Bite-sized wisdom in every new tab.",
   "scripts": {
     "dev": "vite",
     "build": "npm run icons && tsc -b && vite build && npm run copy-manifest",

@@ -5,131 +5,132 @@ import type { Inspiration, Newsletter, ContentByte } from '../types';
 // =============================================================================
 
 export const SAMPLE_BYTES: ContentByte[] = [
+  // Time & Mortality themed bytes (shown first to new users)
   {
     id: 'byte-1',
+    content: "You have about 4,000 weeks to live. How you spend this one matters.",
+    type: 'insight',
+    author: 'Oliver Burkeman',
+    context: 'on time',
+    category: 'life',
+    source: {
+      id: 'src-1',
+      name: 'Four Thousand Weeks',
+      isVerified: true,
+    },
+    engagement: { upvotes: 3247, downvotes: 12, viewCount: 65420 },
+    isSponsored: false,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'byte-2',
     content: "The best time to plant a tree was 20 years ago. The second best time is now.",
     type: 'quote',
     author: 'Chinese Proverb',
     context: 'on taking action',
     category: 'wisdom',
     source: {
-      id: 'src-1',
+      id: 'src-2',
       name: "James Clear's 3-2-1",
       isVerified: true,
     },
-    engagement: { upvotes: 847, downvotes: 12, viewCount: 15420 },
-    isSponsored: false,
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'byte-2',
-    content: "We do not rise to the level of our goals. We fall to the level of our systems.",
-    type: 'insight',
-    author: 'James Clear',
-    context: 'on habits',
-    category: 'productivity',
-    source: {
-      id: 'src-2',
-      name: 'Atomic Habits Newsletter',
-      isVerified: true,
-    },
-    engagement: { upvotes: 1243, downvotes: 23, viewCount: 28540 },
+    engagement: { upvotes: 2847, downvotes: 12, viewCount: 45420 },
     isSponsored: false,
     createdAt: new Date(Date.now() - 86400000).toISOString(),
   },
   {
     id: 'byte-3',
+    content: "Health is the first wealth. Without it, nothing else matters.",
+    type: 'insight',
+    author: 'Ralph Waldo Emerson',
+    context: 'on priorities',
+    category: 'health',
+    source: {
+      id: 'src-3',
+      name: 'The Hustle',
+      isVerified: true,
+    },
+    engagement: { upvotes: 1856, downvotes: 14, viewCount: 35230 },
+    isSponsored: false,
+    createdAt: new Date(Date.now() - 172800000).toISOString(),
+  },
+  {
+    id: 'byte-4',
+    content: "We don't rise to the level of our goals. We fall to the level of our systems.",
+    type: 'insight',
+    author: 'James Clear',
+    context: 'on habits',
+    category: 'productivity',
+    source: {
+      id: 'src-4',
+      name: 'Atomic Habits Newsletter',
+      isVerified: true,
+    },
+    engagement: { upvotes: 2243, downvotes: 23, viewCount: 48540 },
+    isSponsored: false,
+    createdAt: new Date(Date.now() - 259200000).toISOString(),
+  },
+  {
+    id: 'byte-5',
     content: "The obstacle is the way.",
     type: 'quote',
     author: 'Marcus Aurelius',
     context: 'on challenges',
     category: 'wisdom',
     source: {
-      id: 'src-3',
+      id: 'src-5',
       name: 'Daily Stoic',
       isVerified: true,
     },
-    engagement: { upvotes: 2156, downvotes: 34, viewCount: 45230 },
+    engagement: { upvotes: 2956, downvotes: 34, viewCount: 55230 },
     isSponsored: false,
-    createdAt: new Date(Date.now() - 172800000).toISOString(),
+    createdAt: new Date(Date.now() - 345600000).toISOString(),
   },
   {
-    id: 'byte-4',
+    id: 'byte-6',
+    content: "Ask yourself: 'Will this matter in 5 years?' If not, don't spend more than 5 minutes upset about it.",
+    type: 'mental_model',
+    author: null,
+    context: 'on perspective',
+    category: 'life',
+    source: {
+      id: 'src-6',
+      name: 'Farnam Street',
+      isVerified: true,
+    },
+    engagement: { upvotes: 1923, downvotes: 15, viewCount: 36540 },
+    isSponsored: false,
+    createdAt: new Date(Date.now() - 432000000).toISOString(),
+  },
+  {
+    id: 'byte-7',
     content: "Every yes is a no to something else. Make your nos intentional.",
     type: 'takeaway',
     author: null,
     context: 'on prioritization',
     category: 'productivity',
     source: {
-      id: 'src-4',
+      id: 'src-7',
       name: "Lenny's Newsletter",
       isVerified: true,
     },
-    engagement: { upvotes: 567, downvotes: 8, viewCount: 12340 },
-    isSponsored: false,
-    createdAt: new Date(Date.now() - 259200000).toISOString(),
-  },
-  {
-    id: 'byte-5',
-    content: "Companies that win in AI will be those that have unique data, not those that have the best models.",
-    type: 'insight',
-    author: 'Ben Thompson',
-    context: 'on AI strategy',
-    category: 'tech',
-    source: {
-      id: 'src-5',
-      name: 'Stratechery',
-      isVerified: true,
-    },
-    engagement: { upvotes: 892, downvotes: 45, viewCount: 19870 },
-    isSponsored: false,
-    createdAt: new Date(Date.now() - 345600000).toISOString(),
-  },
-  {
-    id: 'byte-6',
-    content: "The goal isn't to remember everything—it's to forget safely.",
-    type: 'insight',
-    author: 'Tiago Forte',
-    context: 'on knowledge management',
-    category: 'productivity',
-    source: {
-      id: 'src-6',
-      name: 'Forte Labs',
-      isVerified: true,
-    },
-    engagement: { upvotes: 723, downvotes: 15, viewCount: 16540 },
-    isSponsored: false,
-    createdAt: new Date(Date.now() - 432000000).toISOString(),
-  },
-  {
-    id: 'byte-7',
-    content: "90% of startups fail because they build something nobody wants, not because they build it wrong.",
-    type: 'statistic',
-    author: null,
-    context: 'on product-market fit',
-    category: 'business',
-    source: {
-      id: 'src-7',
-      name: 'First Round Review',
-      isVerified: true,
-    },
-    engagement: { upvotes: 1456, downvotes: 67, viewCount: 34560 },
+    engagement: { upvotes: 1567, downvotes: 8, viewCount: 32340 },
     isSponsored: false,
     createdAt: new Date(Date.now() - 518400000).toISOString(),
   },
   {
     id: 'byte-8',
-    content: "Block 2 hours every morning for deep work. No meetings, no Slack, no email.",
-    type: 'action',
-    author: 'Cal Newport',
+    content: "Your attention is your most precious resource. Guard it like your life depends on it—because your life is made of it.",
+    type: 'insight',
+    author: null,
     context: 'on focus',
     category: 'productivity',
     source: {
       id: 'src-8',
-      name: 'Deep Questions',
+      name: 'Cal Newport',
       isVerified: true,
     },
-    engagement: { upvotes: 934, downvotes: 28, viewCount: 21340 },
+    engagement: { upvotes: 1834, downvotes: 28, viewCount: 41340 },
     isSponsored: false,
     createdAt: new Date(Date.now() - 604800000).toISOString(),
   },
@@ -151,19 +152,51 @@ export const SAMPLE_BYTES: ContentByte[] = [
   },
   {
     id: 'byte-10',
-    content: "The most dangerous risk of all – the risk of spending your life not doing what you want on the bet you can buy yourself the freedom to do it later.",
-    type: 'quote',
+    content: "The most dangerous risk: spending your life not doing what you want, betting you can buy freedom later.",
+    type: 'counterintuitive',
     author: 'Randy Komisar',
     context: 'on life choices',
     category: 'life',
     source: {
-      id: 'src-4',
-      name: "Lenny's Newsletter",
+      id: 'src-10',
+      name: "Tim Ferriss Show",
       isVerified: true,
     },
-    engagement: { upvotes: 2341, downvotes: 18, viewCount: 52340 },
+    engagement: { upvotes: 2541, downvotes: 18, viewCount: 52340 },
     isSponsored: false,
     createdAt: new Date(Date.now() - 777600000).toISOString(),
+  },
+  {
+    id: 'byte-11',
+    content: "1% better every day = 37x better in a year. Small improvements compound.",
+    type: 'statistic',
+    author: 'James Clear',
+    context: 'on growth',
+    category: 'productivity',
+    source: {
+      id: 'src-4',
+      name: 'Atomic Habits Newsletter',
+      isVerified: true,
+    },
+    engagement: { upvotes: 2156, downvotes: 22, viewCount: 48760 },
+    isSponsored: false,
+    createdAt: new Date(Date.now() - 864000000).toISOString(),
+  },
+  {
+    id: 'byte-12',
+    content: "Block 2 hours every morning for deep work. No meetings, no Slack, no email.",
+    type: 'action',
+    author: 'Cal Newport',
+    context: 'on focus',
+    category: 'productivity',
+    source: {
+      id: 'src-8',
+      name: 'Deep Questions',
+      isVerified: true,
+    },
+    engagement: { upvotes: 1734, downvotes: 28, viewCount: 31340 },
+    isSponsored: false,
+    createdAt: new Date(Date.now() - 950400000).toISOString(),
   },
 ];
 
@@ -266,8 +299,81 @@ export const SAMPLE_NEWSLETTERS: Newsletter[] = [
 export const DEFAULT_LIFE_EXPECTANCY = 80;
 
 // =============================================================================
-// HELPER FUNCTIONS
+// BYTE TRACKING & SELECTION
 // =============================================================================
+
+const STORAGE_KEY = 'byteletters_shown_bytes';
+const LAST_BYTE_KEY = 'byteletters_last_byte';
+
+// Check if we're in Chrome extension context
+declare const chrome: {
+  storage?: {
+    local: {
+      get: (keys: string[], callback: (result: Record<string, unknown>) => void) => void;
+      set: (items: Record<string, unknown>, callback?: () => void) => void;
+    };
+  };
+} | undefined;
+
+const isExtension = typeof chrome !== 'undefined' && chrome?.storage;
+
+/**
+ * Get shown byte IDs from storage
+ */
+async function getShownByteIds(): Promise<string[]> {
+  if (isExtension && chrome?.storage?.local) {
+    return new Promise((resolve) => {
+      chrome.storage!.local.get([STORAGE_KEY], (result) => {
+        resolve((result[STORAGE_KEY] as string[]) || []);
+      });
+    });
+  }
+  const stored = localStorage.getItem(STORAGE_KEY);
+  return stored ? JSON.parse(stored) : [];
+}
+
+/**
+ * Get last shown byte ID
+ */
+async function getLastByteId(): Promise<string | null> {
+  if (isExtension && chrome?.storage?.local) {
+    return new Promise((resolve) => {
+      chrome.storage!.local.get([LAST_BYTE_KEY], (result) => {
+        resolve((result[LAST_BYTE_KEY] as string) || null);
+      });
+    });
+  }
+  return localStorage.getItem(LAST_BYTE_KEY);
+}
+
+/**
+ * Mark byte as shown
+ */
+async function markByteShown(byteId: string): Promise<void> {
+  const shownIds = await getShownByteIds();
+
+  // Add to shown list if not already there
+  if (!shownIds.includes(byteId)) {
+    shownIds.push(byteId);
+  }
+
+  // If all bytes have been shown, keep only the last few to allow recycling
+  // but prevent immediate repetition
+  const maxRecent = Math.min(5, Math.floor(SAMPLE_BYTES.length / 2));
+  const idsToStore = shownIds.length >= SAMPLE_BYTES.length
+    ? shownIds.slice(-maxRecent)
+    : shownIds;
+
+  if (isExtension && chrome?.storage) {
+    chrome.storage.local.set({
+      [STORAGE_KEY]: idsToStore,
+      [LAST_BYTE_KEY]: byteId
+    });
+  } else {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(idsToStore));
+    localStorage.setItem(LAST_BYTE_KEY, byteId);
+  }
+}
 
 /**
  * Get a random byte from the sample data
@@ -278,18 +384,97 @@ export function getRandomByte(): ContentByte {
 }
 
 /**
- * Get the next byte (simulating a feed)
+ * Get the next byte - prioritizes unseen bytes, avoids repetition
  */
-let currentByteIndex = 0;
-export function getNextByte(): ContentByte {
-  const byte = SAMPLE_BYTES[currentByteIndex];
-  currentByteIndex = (currentByteIndex + 1) % SAMPLE_BYTES.length;
-  return byte;
+export async function getNextByteAsync(): Promise<ContentByte> {
+  const shownIds = await getShownByteIds();
+  const lastByteId = await getLastByteId();
+
+  // Get unseen bytes (excluding the last shown one)
+  const unseenBytes = SAMPLE_BYTES.filter(
+    (b) => !shownIds.includes(b.id) && b.id !== lastByteId
+  );
+
+  let selectedByte: ContentByte;
+
+  if (unseenBytes.length > 0) {
+    // Pick a random unseen byte
+    const index = Math.floor(Math.random() * unseenBytes.length);
+    selectedByte = unseenBytes[index];
+  } else {
+    // All seen - pick any byte except the last one
+    const availableBytes = SAMPLE_BYTES.filter((b) => b.id !== lastByteId);
+    const index = Math.floor(Math.random() * availableBytes.length);
+    selectedByte = availableBytes[index];
+  }
+
+  // Mark as shown
+  await markByteShown(selectedByte.id);
+
+  return selectedByte;
 }
 
 /**
- * Reset the byte index (for testing)
+ * Synchronous version for backward compatibility (uses cached state)
+ */
+let cachedShownIds: string[] = [];
+let cachedLastByteId: string | null = null;
+
+// Initialize cache on module load
+(async () => {
+  cachedShownIds = await getShownByteIds();
+  cachedLastByteId = await getLastByteId();
+})();
+
+export function getNextByte(): ContentByte {
+  // Get unseen bytes (excluding the last shown one)
+  const unseenBytes = SAMPLE_BYTES.filter(
+    (b) => !cachedShownIds.includes(b.id) && b.id !== cachedLastByteId
+  );
+
+  let selectedByte: ContentByte;
+
+  if (unseenBytes.length > 0) {
+    // Pick a random unseen byte
+    const index = Math.floor(Math.random() * unseenBytes.length);
+    selectedByte = unseenBytes[index];
+  } else {
+    // All seen - pick any byte except the last one, then reset tracking
+    const availableBytes = SAMPLE_BYTES.filter((b) => b.id !== cachedLastByteId);
+    const index = Math.floor(Math.random() * availableBytes.length);
+    selectedByte = availableBytes[index];
+
+    // Reset the shown list but keep last few to prevent immediate repeats
+    const maxRecent = Math.min(3, Math.floor(SAMPLE_BYTES.length / 3));
+    cachedShownIds = cachedShownIds.slice(-maxRecent);
+  }
+
+  // Update cache
+  if (!cachedShownIds.includes(selectedByte.id)) {
+    cachedShownIds.push(selectedByte.id);
+  }
+  cachedLastByteId = selectedByte.id;
+
+  // Persist asynchronously (don't block)
+  markByteShown(selectedByte.id);
+
+  return selectedByte;
+}
+
+/**
+ * Reset byte tracking (for testing)
  */
 export function resetByteIndex(): void {
-  currentByteIndex = 0;
+  cachedShownIds = [];
+  cachedLastByteId = null;
+
+  if (isExtension && chrome?.storage) {
+    chrome.storage.local.set({
+      [STORAGE_KEY]: [],
+      [LAST_BYTE_KEY]: null
+    });
+  } else {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(LAST_BYTE_KEY);
+  }
 }

@@ -6,74 +6,92 @@ interface MortalityBarProps {
   percentLived: number;
 }
 
-// Contextual messages that connect mortality to content
-const CONTEXT_MESSAGES = [
+// Format name properly - handle email prefixes like "apple.solai" -> "Apple"
+function formatDisplayName(name: string): string {
+  if (!name) return '';
+
+  // Get first part (before space or dot)
+  const firstName = name.split(/[\s.]/)[0];
+
+  // Capitalize first letter
+  return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+}
+
+// Wisdom messages that connect mortality awareness to living intentionally
+const WISDOM_MESSAGES = [
+  "Time is your most precious currency.",
+  "Each moment is an invitation to live fully.",
+  "What matters most to you today?",
+  "Your attention shapes your reality.",
+  "Health and time—guard them wisely.",
   "Make this moment count.",
-  "What will you learn today?",
-  "Time well spent starts now.",
-  "Every moment is a choice.",
-  "Wisdom awaits below.",
-  "Feed your mind wisely.",
-  "What matters to you today?",
-  "Your attention is precious.",
 ];
 
 export function MortalityBar({ name, sundaysRemaining, percentLived }: MortalityBarProps) {
-  const firstName = useMemo(() => name.split(' ')[0], [name]);
+  const displayName = useMemo(() => formatDisplayName(name), [name]);
+  const formattedSundays = sundaysRemaining.toLocaleString();
 
-  // Pick a consistent message based on the day
-  const contextMessage = useMemo(() => {
-    const dayIndex = new Date().getDay();
-    return CONTEXT_MESSAGES[dayIndex % CONTEXT_MESSAGES.length];
+  // Select a consistent wisdom message based on the day
+  const wisdomMessage = useMemo(() => {
+    const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
+    return WISDOM_MESSAGES[dayOfYear % WISDOM_MESSAGES.length];
   }, []);
 
-  // Format the number with commas
-  const formattedSundays = sundaysRemaining.toLocaleString();
+  // Calculate life stages for visual representation
+  const lifeStage = useMemo(() => {
+    if (percentLived < 25) return { label: 'Spring', emoji: '🌱' };
+    if (percentLived < 50) return { label: 'Summer', emoji: '☀️' };
+    if (percentLived < 75) return { label: 'Autumn', emoji: '🍂' };
+    return { label: 'Winter', emoji: '❄️' };
+  }, [percentLived]);
 
   return (
     <div className="opacity-0 animate-fade-in text-center">
-      {/* Main Message */}
+      {/* Wisdom Connection */}
       <div className="mb-6">
-        <h1 className="font-display text-3xl md:text-4xl font-medium text-pearl mb-1">
-          {firstName ? (
-            <>
-              {firstName}, you have{' '}
-              <span className="text-life font-semibold">{formattedSundays}</span>
-              {' '}Sundays remaining.
-            </>
-          ) : (
-            <>
-              You have{' '}
-              <span className="text-life font-semibold">{formattedSundays}</span>
-              {' '}Sundays remaining.
-            </>
-          )}
-        </h1>
-
-        {/* Progress Bar - Compact inline version */}
-        <div className="flex items-center justify-center gap-3 mt-3">
-          <div className="w-32 h-1.5 bg-ash rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-life-dim to-life rounded-full life-bar-fill"
-              style={{ width: `${percentLived}%` }}
-            />
-          </div>
-          <span className="text-smoke text-sm font-mono">
-            {percentLived.toFixed(0)}% lived
-          </span>
-        </div>
+        <p className="text-smoke/60 text-sm italic mb-1">
+          {wisdomMessage}
+        </p>
       </div>
 
-      {/* Contextual Bridge Message */}
-      <p className="text-smoke/70 text-lg font-light tracking-wide mb-8 animate-fade-in animation-delay-200">
-        {contextMessage}
+      {/* Main Counter */}
+      <div className="mb-6">
+        <p className="text-smoke text-xs uppercase tracking-[0.2em] mb-2">
+          {displayName ? `${displayName}'s` : 'Your'} Sundays Remaining
+        </p>
+        <h1 className="font-display text-6xl md:text-7xl font-medium text-pearl mb-3">
+          <span className="text-life">{formattedSundays}</span>
+        </h1>
+      </div>
+
+      {/* Life Journey Visualization */}
+      <div className="flex items-center justify-center gap-4 mb-4">
+        <span className="text-xs text-smoke/40">Birth</span>
+        <div className="relative w-48 h-2 bg-ash/30 rounded-full overflow-hidden">
+          {/* Lived portion */}
+          <div
+            className="absolute left-0 top-0 h-full bg-gradient-to-r from-life/40 via-life to-life/80 rounded-full transition-all duration-1000"
+            style={{ width: `${percentLived}%` }}
+          />
+          {/* Current position marker */}
+          <div
+            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-life rounded-full shadow-lg shadow-life/50 transition-all duration-1000"
+            style={{ left: `calc(${percentLived}% - 6px)` }}
+          />
+        </div>
+        <span className="text-xs text-smoke/40">{lifeStage.emoji}</span>
+      </div>
+
+      {/* Percentage */}
+      <p className="text-smoke/50 text-xs mb-8">
+        {percentLived.toFixed(0)}% of your journey
       </p>
 
-      {/* Decorative Divider */}
-      <div className="flex items-center justify-center gap-4 mb-8">
-        <div className="w-12 h-px bg-gradient-to-r from-transparent to-ash" />
-        <div className="w-1.5 h-1.5 rounded-full bg-life/50" />
-        <div className="w-12 h-px bg-gradient-to-l from-transparent to-ash" />
+      {/* Subtle Divider */}
+      <div className="flex items-center justify-center gap-4 mb-6">
+        <div className="w-12 h-px bg-gradient-to-r from-transparent to-ash/30" />
+        <div className="w-1.5 h-1.5 rounded-full bg-life/20" />
+        <div className="w-12 h-px bg-gradient-to-l from-transparent to-ash/30" />
       </div>
     </div>
   );

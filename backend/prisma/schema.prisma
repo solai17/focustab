@@ -177,9 +177,11 @@ model Edition {
   summary         String?
   readTimeMinutes Int?
 
-  // Processing status
-  isProcessed     Boolean   @default(false)
-  processingError String?
+  // Processing queue status
+  processingStatus String   @default("pending") // pending, processing, completed, failed
+  processAttempts  Int      @default(0)         // Number of processing attempts
+  processingError  String?                      // Last error message if failed
+  isProcessed      Boolean  @default(false)     // Legacy field for compatibility
 
   publishedAt     DateTime  @default(now()) // When newsletter was sent
   receivedAt      DateTime  @default(now()) // When we received it
@@ -191,6 +193,7 @@ model Edition {
   @@index([sourceId])
   @@index([publishedAt])
   @@index([contentHash])
+  @@index([processingStatus])  // Index for queue queries
   @@map("editions")
 }
 

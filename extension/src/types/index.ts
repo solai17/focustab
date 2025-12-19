@@ -15,7 +15,7 @@ export interface UserProfile {
 // CONTENT BYTE TYPES (v2.0 - "Reels for Text")
 // =============================================================================
 
-export type ByteType = 'quote' | 'insight' | 'statistic' | 'action' | 'takeaway';
+export type ByteType = 'quote' | 'insight' | 'statistic' | 'action' | 'takeaway' | 'mental_model' | 'counterintuitive';
 
 export type ByteCategory =
   | 'wisdom'

@@ -1,53 +1,76 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ProcessedNewsletter, ProcessedEdition, ExtractedByte, ByteType, ByteCategory } from '../types';
+import { extractBytesWithGemini, isGeminiAvailable } from './gemini';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
+// Use Gemini (FREE) as primary, Claude as fallback
+const USE_GEMINI_PRIMARY = process.env.USE_GEMINI_PRIMARY !== 'false';
+
 // =============================================================================
 // v2.0 CONTENT BYTE EXTRACTION
 // =============================================================================
 
-const BYTE_EXTRACTION_PROMPT = `You are a content curator extracting bite-sized wisdom from newsletters. Your goal is to find the "gold nuggets" - pieces that would make someone stop scrolling and think.
+const BYTE_EXTRACTION_PROMPT = `You are a master curator extracting transformative insights from newsletters. Your mission: find the ONE idea that could change how someone thinks or acts today.
 
-Analyze the newsletter and extract multiple ContentBytes. Return a JSON object:
+Think like the reader is opening a new tab, has 5 seconds, and needs something that:
+- Makes them pause and reflect
+- Challenges a belief they hold
+- Gives them a new lens to see the world
+- Inspires immediate action
+
+Return a JSON object:
 
 {
-  "summary": "A compelling 2-3 sentence summary of the newsletter",
+  "summary": "A compelling 2-3 sentence summary capturing the newsletter's core value",
   "readTimeMinutes": 5,
   "bytes": [
     {
-      "content": "The actual quote, insight, or takeaway (1-3 sentences max)",
-      "type": "quote|insight|statistic|action|takeaway",
-      "author": "Original author if quoted, otherwise null",
-      "context": "Brief context (10 words max) e.g., 'on productivity' or 'about startup hiring'",
+      "content": "The insight, rewritten to be punchy and memorable (1-4 sentences, max 100 words, readable in 20-30 seconds)",
+      "type": "quote|insight|statistic|action|takeaway|mental_model|counterintuitive",
+      "author": "Original author if this is a direct quote, otherwise null",
+      "context": "Brief context (5-8 words) e.g., 'on decision-making' or 'about creative work'",
       "category": "wisdom|productivity|business|tech|life|creativity|leadership|finance|health|general",
       "qualityScore": 0.85
     }
   ]
 }
 
-BYTE TYPES:
-- quote: A quotable passage from someone (needs author)
-- insight: A non-obvious observation or idea
-- statistic: A surprising data point or number
-- action: A specific actionable tip
-- takeaway: A key lesson or conclusion
+BYTE TYPES (pick the most fitting):
+- quote: A memorable statement worth remembering (requires author)
+- insight: A non-obvious truth that shifts perspective
+- statistic: A number that changes how you see something
+- action: A specific thing you can do TODAY
+- takeaway: A key lesson or principle
+- mental_model: A framework for thinking about problems
+- counterintuitive: Something that goes against common wisdom
 
-QUALITY GUIDELINES:
-- qualityScore 0.9+: Would go viral on Twitter, universally valuable
-- qualityScore 0.7-0.9: Great content, valuable to most readers
-- qualityScore 0.5-0.7: Good but niche or requires context
-- qualityScore <0.5: Skip these, not worth extracting
+WHAT MAKES A GREAT BYTE:
+✓ "The best time to plant a tree was 20 years ago. The second best time is now."
+✓ "You don't rise to the level of your goals; you fall to the level of your systems."
+✓ "1% better every day = 37x better in a year"
+✓ "Ask 'What would this look like if it were easy?'"
+✗ "The author discusses various productivity techniques" (too vague)
+✗ "There are many ways to improve your life" (no substance)
+✗ "Click here to learn more about..." (promotional)
 
 EXTRACTION RULES:
-1. Extract 3-8 bytes per newsletter (quality over quantity)
-2. Each byte must stand ALONE without needing the full article
-3. Prefer timeless wisdom over time-sensitive news
-4. Include attribution when quoting others
-5. Make content snappy - if it needs too much context, skip it
-6. Vary the types - don't just extract quotes
+1. Quality over quantity: 2-5 EXCEPTIONAL bytes beat 10 mediocre ones
+2. REWRITE for impact: Don't just copy-paste. Distill the essence into memorable form
+3. TIMELESS over timely: Skip news, dates, "this week", "recently"
+4. STANDALONE: If it needs the article to make sense, skip it
+5. ACTIONABLE preferred: "Do X" beats "X is important"
+6. SPECIFIC beats generic: "Walk 10 mins after meals" beats "Exercise more"
+7. SKIP promotional content, CTAs, and self-references to the newsletter
+
+SCORING:
+- 0.95+: Life-changing insight, universally applicable, memorable phrasing
+- 0.85-0.94: Excellent insight, most people would save/share this
+- 0.75-0.84: Good insight, valuable to interested readers
+- 0.65-0.74: Decent but needs more context or is somewhat niche
+- Below 0.65: Don't include
 
 Return ONLY valid JSON, no markdown or explanation.`;
 
@@ -56,7 +79,32 @@ export async function processEditionWithClaude(
   textContent: string,
   sourceName: string
 ): Promise<ProcessedEdition> {
+  // Try Gemini first (FREE: 1,500 requests/day)
+  if (USE_GEMINI_PRIMARY && isGeminiAvailable()) {
+    try {
+      console.log(`[AI] Using Gemini (FREE) for: ${sourceName}`);
+      const geminiBytes = await extractBytesWithGemini(textContent, sourceName);
+
+      if (geminiBytes.length > 0) {
+        return {
+          summary: `Processed ${geminiBytes.length} insights from ${sourceName}`,
+          readTimeMinutes: Math.ceil(textContent.split(/\s+/).length / 200),
+          bytes: geminiBytes.map((byte) => ({
+            ...byte,
+            type: validateByteType(byte.type),
+            category: validateByteCategory(byte.category),
+          })),
+        };
+      }
+      console.log('[AI] Gemini returned no bytes, falling back to Claude');
+    } catch (error) {
+      console.error('[AI] Gemini failed, falling back to Claude:', error);
+    }
+  }
+
+  // Fallback to Claude (paid)
   try {
+    console.log(`[AI] Using Claude (paid) for: ${sourceName}`);
     // Truncate content if too long
     const truncatedContent = textContent.slice(0, 20000);
 
@@ -85,10 +133,12 @@ ${truncatedContent}`,
     const parsed = JSON.parse(responseText);
 
     // Validate and clean up bytes
+    // Length: min 30 chars, max 500 chars (~100 words, readable in 20-30 seconds)
     const validBytes: ExtractedByte[] = (parsed.bytes || [])
       .filter((byte: any) => {
-        // Must have content and reasonable quality
-        return byte.content && byte.content.length > 20 && (byte.qualityScore || 0.5) >= 0.5;
+        const len = byte.content?.length || 0;
+        // Must have content (30-500 chars) and meet quality threshold (0.65+)
+        return byte.content && len >= 30 && len <= 500 && (byte.qualityScore || 0.65) >= 0.65;
       })
       .map((byte: any) => ({
         content: byte.content.trim(),
@@ -118,7 +168,7 @@ ${truncatedContent}`,
 }
 
 function validateByteType(type: string): ByteType {
-  const validTypes: ByteType[] = ['quote', 'insight', 'statistic', 'action', 'takeaway'];
+  const validTypes: ByteType[] = ['quote', 'insight', 'statistic', 'action', 'takeaway', 'mental_model', 'counterintuitive'];
   return validTypes.includes(type as ByteType) ? (type as ByteType) : 'insight';
 }
 

@@ -97,7 +97,7 @@ export async function authenticateWithGoogle(
   googleEmail: string,
   googleId: string,
   profileData?: { name?: string; birthDate?: string; lifeExpectancy?: number; enableRecommendations?: boolean }
-): Promise<{ user: AuthUser; token: string }> {
+): Promise<{ user: AuthUser; token: string; isNewUser: boolean }> {
   const response = await fetch(`${API_BASE_URL}/auth/google`, {
     method: 'POST',
     headers: {
@@ -122,7 +122,11 @@ export async function authenticateWithGoogle(
   await storage.set(AUTH_KEYS.USER_ID, data.user.id);
   await storage.set(AUTH_KEYS.USER_EMAIL, data.user.email);
 
-  return data;
+  return {
+    user: data.user,
+    token: data.token,
+    isNewUser: data.isNewUser ?? false,
+  };
 }
 
 /**
