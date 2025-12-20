@@ -1,6 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ProcessedEdition, ExtractedByte, ByteType, ByteCategory } from '../types';
-import { extractBytesWithGemini, isGeminiAvailable } from './gemini';
+import { extractBytesWithGemini, isGeminiAvailable, NewsletterInfo, ExtractionResult } from './gemini';
+
+// Extended result type that includes newsletter info
+export interface ProcessedEditionWithSourceInfo extends ProcessedEdition {
+  newsletterInfo?: NewsletterInfo;
+}
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -77,24 +82,32 @@ Return ONLY valid JSON, no markdown or explanation.`;
 export async function processEditionWithClaude(
   subject: string,
   textContent: string,
-  sourceName: string
-): Promise<ProcessedEdition> {
+  sourceName: string,
+  extractSourceInfo: boolean = false
+): Promise<ProcessedEditionWithSourceInfo> {
   // Try Gemini first (FREE: 1,500 requests/day)
   if (USE_GEMINI_PRIMARY && isGeminiAvailable()) {
     try {
-      console.log(`[AI] Using Gemini (FREE) for: ${sourceName}`);
-      const geminiBytes = await extractBytesWithGemini(textContent, sourceName);
+      console.log(`[AI] Using Gemini (FREE) for: ${sourceName}${extractSourceInfo ? ' (with source info)' : ''}`);
+      const geminiResult = await extractBytesWithGemini(textContent, sourceName, extractSourceInfo);
 
-      if (geminiBytes.length > 0) {
-        return {
-          summary: `Processed ${geminiBytes.length} insights from ${sourceName}`,
+      if (geminiResult.bytes.length > 0) {
+        const result: ProcessedEditionWithSourceInfo = {
+          summary: `Processed ${geminiResult.bytes.length} insights from ${sourceName}`,
           readTimeMinutes: Math.ceil(textContent.split(/\s+/).length / 200),
-          bytes: geminiBytes.map((byte) => ({
+          bytes: geminiResult.bytes.map((byte) => ({
             ...byte,
             type: validateByteType(byte.type),
             category: validateByteCategory(byte.category),
           })),
         };
+
+        // Include newsletter info if extracted
+        if (geminiResult.newsletterInfo) {
+          result.newsletterInfo = geminiResult.newsletterInfo;
+        }
+
+        return result;
       }
       console.log('[AI] Gemini returned no bytes, falling back to Claude');
     } catch (error) {

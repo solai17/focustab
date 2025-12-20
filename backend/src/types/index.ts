@@ -73,6 +73,7 @@ export interface ContentByteResponse {
     id: string;
     name: string;
     isVerified: boolean;
+    website: string | null; // Newsletter subscription URL (extracted by AI)
   };
   engagement: {
     upvotes: number;

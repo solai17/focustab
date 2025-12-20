@@ -115,11 +115,11 @@ export function ByteCard({
               <CheckCircle className="w-4 h-4 text-life" />
             )}
             <a
-              href={`https://www.google.com/search?q=${encodeURIComponent(byte.source.name + ' newsletter subscribe')}`}
+              href={byte.source.website || `https://www.google.com/search?q=${encodeURIComponent(byte.source.name + ' newsletter subscribe')}`}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1 hover:text-life transition-colors group"
-              title={`Find ${byte.source.name} newsletter`}
+              title={byte.source.website ? `Subscribe to ${byte.source.name}` : `Find ${byte.source.name} newsletter`}
             >
               <span>{byte.source.name}</span>
               <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />

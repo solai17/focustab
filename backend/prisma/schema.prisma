@@ -133,6 +133,7 @@ model NewsletterSource {
   senderEmail     String    @unique // Primary identifier
   senderDomain    String    // Extracted domain for grouping
   description     String?   // Auto-generated or manual
+  website         String?   // Newsletter subscription URL (extracted by AI)
 
   // Categorization
   category        String    @default("general") // tech, business, productivity, etc.
