@@ -134,17 +134,6 @@ export interface ProcessedEdition {
   bytes: ExtractedByte[];
 }
 
-// Legacy type for backward compatibility
-export interface ProcessedNewsletter {
-  inspirations: Array<{
-    quote: string;
-    author: string;
-  }>;
-  summary: string;
-  keyInsight: string;
-  readTimeMinutes: number;
-}
-
 // =============================================================================
 // DISCOVERY TYPES
 // =============================================================================

@@ -8,7 +8,6 @@ dotenv.config();
 
 // Import routes
 import authRoutes from './routes/auth';
-import contentRoutes from './routes/content';
 import webhookRoutes from './routes/webhooks';
 import feedRoutes from './routes/feed';
 import discoverRoutes from './routes/discover';
@@ -65,10 +64,9 @@ app.get('/health', (req, res) => {
 
 // API Routes
 app.use('/auth', authRoutes);
-app.use('/content', contentRoutes);
 app.use('/webhooks', webhookRoutes);
-app.use('/feed', feedRoutes);        // v2.0 - Content feed with engagement
-app.use('/discover', discoverRoutes); // v2.0 - Content discovery
+app.use('/feed', feedRoutes);        // Content feed with engagement
+app.use('/discover', discoverRoutes); // Content discovery
 app.use('/test-feed', testFeedRoutes); // Test routes (no auth, works with mock db)
 app.use('/internal', internalRoutes); // Cron/admin endpoints (protected)
 
@@ -87,7 +85,7 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 app.listen(PORT, () => {
   const dbMode = isMockDb ? '🧪 MOCK DATABASE' : '🗄️  PostgreSQL';
   console.log(`
-  🚀 FocusTab API Server v2.0 running!
+  🚀 ByteLetters API Server running!
 
   📍 Local:    http://localhost:${PORT}
   🔒 Health:   http://localhost:${PORT}/health
@@ -95,9 +93,7 @@ app.listen(PORT, () => {
 
   📧 Webhook:  POST /webhooks/cloudflare, /webhooks/mailgun
   🔑 Auth:     POST /auth/signup, /auth/login
-  📖 Content:  GET  /content/today (legacy)
 
-  🆕 v2.0 Endpoints:
   📰 Feed:     GET  /feed, /feed/next
   👍 Engage:   POST /feed/bytes/:id/vote, /view, /save
   🔍 Discover: GET  /discover/sources, /trending, /popular
