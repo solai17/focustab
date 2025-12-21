@@ -13,7 +13,8 @@
     "db:studio": "prisma studio",
     "db:cleanup": "ts-node scripts/cleanup-db.ts",
     "db:seed": "ts-node scripts/seed-content.ts",
-    "scrape": "ts-node scripts/scrape-newsletters.ts"
+    "scrape": "ts-node scripts/scrape-newsletters.ts",
+    "scrape:test": "ts-node scripts/test-scrape.ts"
   },
   "keywords": [
     "byteletters",
