@@ -2,9 +2,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import { ProcessedEdition, ExtractedByte, ByteType, ByteCategory } from '../types';
 import { extractBytesWithGemini, isGeminiAvailable, NewsletterInfo, ExtractionResult } from './gemini';
 
-// Extended result type that includes newsletter info
+// Extended result type that includes newsletter info and model tracking
 export interface ProcessedEditionWithSourceInfo extends ProcessedEdition {
   newsletterInfo?: NewsletterInfo;
+  modelUsed?: string; // Track which AI model processed this
 }
 
 const anthropic = new Anthropic({
@@ -100,6 +101,7 @@ export async function processEditionWithClaude(
             type: validateByteType(byte.type),
             category: validateByteCategory(byte.category),
           })),
+          modelUsed: geminiResult.modelUsed, // Track which Gemini model was used
         };
 
         // Include newsletter info if extracted
@@ -167,6 +169,7 @@ ${truncatedContent}`,
       readTimeMinutes:
         parsed.readTimeMinutes || Math.ceil(textContent.split(/\s+/).length / 200),
       bytes: validBytes,
+      modelUsed: 'claude-sonnet-4', // Track Claude model
     };
   } catch (error) {
     console.error('Error processing edition with Claude:', error);

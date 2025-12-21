@@ -163,7 +163,7 @@ export async function processEdition(
       });
     }
 
-    // Update edition status
+    // Update edition status with model tracking
     await prisma.edition.update({
       where: { id },
       data: {
@@ -172,6 +172,7 @@ export async function processEdition(
         processedAt: new Date(),
         summary: result.summary,
         readTimeMinutes: result.readTimeMinutes,
+        processedByModel: result.modelUsed || 'unknown',
         processingError: null,
       },
     });
