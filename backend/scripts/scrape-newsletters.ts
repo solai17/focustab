@@ -1,7 +1,8 @@
 /**
- * Newsletter Scraper
+ * Newsletter Scraper with Headless Browser Support
  *
  * Scrapes newsletter archives and saves editions to the processing queue.
+ * Uses Puppeteer for JavaScript-rendered sites (like James Clear).
  * Processing happens via the queue system (Gemini with rate limiting).
  *
  * Newsletters:
@@ -9,6 +10,9 @@
  * 2. Farnam Street Brain Food - https://fs.blog/brain-food/
  * 3. Sahil Bloom Curiosity Chronicle - https://www.sahilbloom.com/newsletter
  * 4. Alex and Books - https://alexandbooks.beehiiv.com/
+ *
+ * Setup:
+ *   npm install puppeteer
  *
  * Usage:
  *   npm run scrape                    # Scrape all newsletters
@@ -21,9 +25,17 @@ import * as cheerio from 'cheerio';
 import { prisma } from '../src/services/db';
 import crypto from 'crypto';
 
+// Puppeteer types (dynamically imported)
+type Browser = import('puppeteer').Browser;
+type Page = import('puppeteer').Page;
+
 // Configuration
 const DELAY_BETWEEN_REQUESTS = 2000; // 2 seconds between requests
 const MAX_EDITIONS_PER_SOURCE = 1000; // High limit to get all editions (effectively no limit)
+const BROWSER_TIMEOUT = 60000; // 60 seconds for JS rendering
+
+// Global browser instance
+let browser: Browser | null = null;
 
 interface NewsletterConfig {
   name: string;
@@ -32,6 +44,7 @@ interface NewsletterConfig {
   archiveUrl: string;
   category: string;
   author: string;
+  requiresBrowser: boolean; // True for JS-rendered sites
   scraper: (config: NewsletterConfig) => Promise<EditionData[]>;
 }
 
@@ -56,6 +69,115 @@ function generateContentHash(content: string): string {
   return crypto.createHash('sha256').update(content).digest('hex');
 }
 
+/**
+ * Initialize Puppeteer browser
+ */
+async function initBrowser(): Promise<Browser | null> {
+  if (browser) return browser;
+
+  try {
+    // Dynamic import to handle missing puppeteer gracefully
+    const puppeteer = await import('puppeteer');
+
+    console.log('[Browser] Launching headless Chrome...');
+    browser = await puppeteer.default.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+        '--window-size=1920x1080',
+      ],
+    });
+    console.log('[Browser] Chrome launched successfully');
+    return browser;
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Browser] Failed to launch: ${msg}`);
+    console.log('[Browser] Falling back to axios for all requests');
+    console.log('[Browser] To enable headless scraping, run: npm install puppeteer');
+    return null;
+  }
+}
+
+/**
+ * Close browser when done
+ */
+async function closeBrowser(): Promise<void> {
+  if (browser) {
+    console.log('[Browser] Closing Chrome...');
+    await browser.close();
+    browser = null;
+  }
+}
+
+/**
+ * Fetch page with headless browser (for JS-rendered content)
+ */
+async function fetchPageWithBrowser(url: string, waitForSelector?: string): Promise<string> {
+  const browserInstance = await initBrowser();
+  if (!browserInstance) {
+    // Fallback to axios
+    return fetchPage(url);
+  }
+
+  let page: Page | null = null;
+  try {
+    page = await browserInstance.newPage();
+
+    // Set viewport and user agent
+    await page.setViewport({ width: 1920, height: 1080 });
+    await page.setUserAgent(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    );
+
+    // Block unnecessary resources to speed up loading
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      const resourceType = req.resourceType();
+      if (['image', 'font', 'media'].includes(resourceType)) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+
+    // Navigate and wait for content
+    console.log(`  [Browser] Loading: ${url}`);
+    await page.goto(url, {
+      waitUntil: 'networkidle2',
+      timeout: BROWSER_TIMEOUT,
+    });
+
+    // Wait for specific selector if provided
+    if (waitForSelector) {
+      await page.waitForSelector(waitForSelector, { timeout: 10000 }).catch(() => {
+        console.log(`  [Browser] Selector ${waitForSelector} not found, continuing...`);
+      });
+    }
+
+    // Small delay for any late-loading content
+    await sleep(1000);
+
+    // Get rendered HTML
+    const html = await page.content();
+    return html;
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`  [Browser] Error fetching ${url}: ${msg}`);
+    return '';
+  } finally {
+    if (page) {
+      await page.close();
+    }
+  }
+}
+
+/**
+ * Fetch page with axios (for static content)
+ */
 async function fetchPage(url: string, retries = 3): Promise<string> {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -95,16 +217,19 @@ function cleanTitle(title: string): string {
 }
 
 // =============================================================================
-// JAMES CLEAR 3-2-1 NEWSLETTER SCRAPER
+// JAMES CLEAR 3-2-1 NEWSLETTER SCRAPER (Uses Puppeteer)
 // =============================================================================
 
 async function scrapeJamesClear(config: NewsletterConfig): Promise<EditionData[]> {
-  console.log(`\n[${config.name}] Starting scrape...`);
+  console.log(`\n[${config.name}] Starting scrape with headless browser...`);
   const editions: EditionData[] = [];
 
-  // James Clear lists all 3-2-1 editions on the main page
-  const archiveHtml = await fetchPage(config.archiveUrl);
-  if (!archiveHtml) return editions;
+  // James Clear lists all 3-2-1 editions on the main page (requires JS)
+  const archiveHtml = await fetchPageWithBrowser(config.archiveUrl, 'article, .post, a[href*="/3-2-1/"]');
+  if (!archiveHtml) {
+    console.log(`[${config.name}] Failed to load archive page`);
+    return editions;
+  }
 
   const $ = cheerio.load(archiveHtml);
   const links: { url: string; title: string }[] = [];
@@ -128,14 +253,25 @@ async function scrapeJamesClear(config: NewsletterConfig): Promise<EditionData[]
 
   console.log(`[${config.name}] Found ${links.length} edition links`);
 
-  // Scrape each edition
+  if (links.length === 0) {
+    console.log(`[${config.name}] No links found. Trying alternative selectors...`);
+
+    // Try to find any links that might contain newsletter content
+    $('a[href*="3-2-1"]').each((_, el) => {
+      const href = $(el).attr('href') || '';
+      const text = $(el).text().trim();
+      console.log(`  Found link: ${href} - "${text.substring(0, 50)}"`);
+    });
+  }
+
+  // Scrape each edition with browser
   const toScrape = links.slice(0, MAX_EDITIONS_PER_SOURCE);
   for (let i = 0; i < toScrape.length; i++) {
     const { url, title } = toScrape[i];
     console.log(`[${config.name}] Scraping ${i + 1}/${toScrape.length}: ${title.substring(0, 50)}...`);
 
     await sleep(DELAY_BETWEEN_REQUESTS);
-    const pageHtml = await fetchPage(url);
+    const pageHtml = await fetchPageWithBrowser(url, 'article, .post-content, .entry-content');
     if (!pageHtml) continue;
 
     const page$ = cheerio.load(pageHtml);
@@ -279,96 +415,139 @@ async function scrapeFarnamStreet(config: NewsletterConfig): Promise<EditionData
 }
 
 // =============================================================================
-// SAHIL BLOOM CURIOSITY CHRONICLE SCRAPER
+// SAHIL BLOOM CURIOSITY CHRONICLE SCRAPER (Uses Puppeteer for Substack)
 // =============================================================================
 
 async function scrapeSahilBloom(config: NewsletterConfig): Promise<EditionData[]> {
-  console.log(`\n[${config.name}] Starting scrape...`);
+  console.log(`\n[${config.name}] Starting scrape with headless browser...`);
   const editions: EditionData[] = [];
   const seenUrls = new Set<string>();
 
-  // Try multiple archive sources
-  const archiveUrls = [
-    'https://www.sahilbloom.com/newsletter',
-    'https://sahilbloom.substack.com/archive',
-  ];
+  // Substack archives require scrolling to load all posts
+  const archiveUrl = 'https://sahilbloom.substack.com/archive?sort=new';
 
-  for (const archiveUrl of archiveUrls) {
-    if (editions.length >= MAX_EDITIONS_PER_SOURCE) break;
+  console.log(`[${config.name}] Loading Substack archive...`);
 
-    console.log(`[${config.name}] Trying archive: ${archiveUrl}`);
-    const archiveHtml = await fetchPage(archiveUrl);
-    if (!archiveHtml) continue;
+  // Use browser to load and scroll through archive
+  const browserInstance = await initBrowser();
+  if (browserInstance) {
+    let page: Page | null = null;
+    try {
+      page = await browserInstance.newPage();
+      await page.setViewport({ width: 1920, height: 1080 });
+      await page.setUserAgent(
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      );
 
-    const $ = cheerio.load(archiveHtml);
-    const links: { url: string; title: string }[] = [];
+      await page.goto(archiveUrl, { waitUntil: 'networkidle2', timeout: BROWSER_TIMEOUT });
 
-    // Look for post links (Substack uses /p/ pattern)
-    $('a').each((_, el) => {
-      const href = $(el).attr('href') || '';
-      const text = $(el).text().trim();
+      // Scroll to load more posts (Substack uses infinite scroll)
+      let previousHeight = 0;
+      let scrollAttempts = 0;
+      const maxScrolls = 20; // Limit scrolling
 
-      if ((href.includes('/p/') || href.includes('/posts/')) && text.length > 5) {
-        let fullUrl = href;
-        if (!href.startsWith('http')) {
-          if (archiveUrl.includes('substack')) {
+      while (scrollAttempts < maxScrolls) {
+        const currentHeight = await page.evaluate(() => document.body.scrollHeight);
+        if (currentHeight === previousHeight) break;
+
+        previousHeight = currentHeight;
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await sleep(2000);
+        scrollAttempts++;
+        console.log(`  [${config.name}] Scrolled ${scrollAttempts} times, height: ${currentHeight}`);
+      }
+
+      const archiveHtml = await page.content();
+      const $ = cheerio.load(archiveHtml);
+
+      // Find post links
+      $('a[href*="/p/"]').each((_, el) => {
+        const href = $(el).attr('href') || '';
+        const text = $(el).text().trim();
+
+        if (text.length > 5 && !seenUrls.has(href)) {
+          let fullUrl = href;
+          if (!href.startsWith('http')) {
             fullUrl = `https://sahilbloom.substack.com${href}`;
-          } else {
-            fullUrl = `https://www.sahilbloom.com${href}`;
           }
-        }
-
-        if (!seenUrls.has(fullUrl)) {
           seenUrls.add(fullUrl);
-          links.push({ url: fullUrl, title: cleanTitle(text) });
         }
-      }
-    });
+      });
 
-    console.log(`[${config.name}] Found ${links.length} edition links`);
-
-    // Scrape each edition
-    for (let i = 0; i < links.length && editions.length < MAX_EDITIONS_PER_SOURCE; i++) {
-      const { url, title } = links[i];
-      console.log(`[${config.name}] Scraping ${editions.length + 1}/${Math.min(links.length, MAX_EDITIONS_PER_SOURCE)}: ${title.substring(0, 50)}...`);
-
-      await sleep(DELAY_BETWEEN_REQUESTS);
-      const pageHtml = await fetchPage(url);
-      if (!pageHtml) continue;
-
-      const page$ = cheerio.load(pageHtml);
-      page$('nav, header, footer, .sidebar, script, style, .subscribe-widget').remove();
-
-      const articleHtml = page$('.post-content').html() ||
-                          page$('.body').html() ||
-                          page$('article').html() ||
-                          page$('main').html() || '';
-
-      const articleText = extractText(articleHtml);
-
-      if (articleText.length > 200) {
-        const dateStr = page$('time').attr('datetime') ||
-                       page$('meta[property="article:published_time"]').attr('content');
-
-        let publishedAt = new Date();
-        if (dateStr) {
-          const parsed = new Date(dateStr);
-          if (!isNaN(parsed.getTime())) {
-            publishedAt = parsed;
-          }
-        }
-
-        editions.push({
-          subject: title,
-          url,
-          content: articleText,
-          htmlContent: articleHtml,
-          publishedAt,
-        });
-      }
+      console.log(`[${config.name}] Found ${seenUrls.size} edition links`);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`[${config.name}] Browser error: ${msg}`);
+    } finally {
+      if (page) await page.close();
     }
+  }
+
+  // If browser didn't work, try axios fallback
+  if (seenUrls.size === 0) {
+    console.log(`[${config.name}] Falling back to axios...`);
+    const archiveHtml = await fetchPage('https://sahilbloom.substack.com/archive');
+    if (archiveHtml) {
+      const $ = cheerio.load(archiveHtml);
+      $('a[href*="/p/"]').each((_, el) => {
+        const href = $(el).attr('href') || '';
+        const text = $(el).text().trim();
+
+        if (text.length > 5 && !seenUrls.has(href)) {
+          let fullUrl = href;
+          if (!href.startsWith('http')) {
+            fullUrl = `https://sahilbloom.substack.com${href}`;
+          }
+          seenUrls.add(fullUrl);
+        }
+      });
+    }
+  }
+
+  // Scrape each edition
+  const links = Array.from(seenUrls);
+  for (let i = 0; i < links.length && editions.length < MAX_EDITIONS_PER_SOURCE; i++) {
+    const url = links[i];
+    console.log(`[${config.name}] Scraping ${editions.length + 1}/${Math.min(links.length, MAX_EDITIONS_PER_SOURCE)}: ${url.split('/').pop()?.substring(0, 50)}...`);
 
     await sleep(DELAY_BETWEEN_REQUESTS);
+    const pageHtml = await fetchPage(url);
+    if (!pageHtml) continue;
+
+    const page$ = cheerio.load(pageHtml);
+    page$('nav, header, footer, .sidebar, script, style, .subscribe-widget').remove();
+
+    const title = page$('h1').first().text().trim() ||
+                  page$('meta[property="og:title"]').attr('content') ||
+                  url.split('/').pop()?.replace(/-/g, ' ') || 'Newsletter';
+
+    const articleHtml = page$('.body').html() ||
+                        page$('.post-content').html() ||
+                        page$('article').html() ||
+                        page$('main').html() || '';
+
+    const articleText = extractText(articleHtml);
+
+    if (articleText.length > 200) {
+      const dateStr = page$('time').attr('datetime') ||
+                     page$('meta[property="article:published_time"]').attr('content');
+
+      let publishedAt = new Date();
+      if (dateStr) {
+        const parsed = new Date(dateStr);
+        if (!isNaN(parsed.getTime())) {
+          publishedAt = parsed;
+        }
+      }
+
+      editions.push({
+        subject: cleanTitle(title),
+        url,
+        content: articleText,
+        htmlContent: articleHtml,
+        publishedAt,
+      });
+    }
   }
 
   console.log(`[${config.name}] Scraped ${editions.length} editions`);
@@ -376,25 +555,33 @@ async function scrapeSahilBloom(config: NewsletterConfig): Promise<EditionData[]
 }
 
 // =============================================================================
-// ALEX AND BOOKS SCRAPER (BEEHIIV)
+// ALEX AND BOOKS SCRAPER (BEEHIIV - Uses Puppeteer)
 // =============================================================================
 
 async function scrapeAlexAndBooks(config: NewsletterConfig): Promise<EditionData[]> {
-  console.log(`\n[${config.name}] Starting scrape...`);
+  console.log(`\n[${config.name}] Starting scrape with headless browser...`);
   const editions: EditionData[] = [];
   const seenUrls = new Set<string>();
 
-  // Beehiiv newsletters have posts at /p/
+  // Beehiiv archives also benefit from JS rendering
   const archiveUrls = [
-    config.archiveUrl,
     `${config.archiveUrl}/archive`,
+    config.archiveUrl,
   ];
 
   for (const archiveUrl of archiveUrls) {
     if (editions.length >= MAX_EDITIONS_PER_SOURCE) break;
 
     console.log(`[${config.name}] Trying archive: ${archiveUrl}`);
-    const archiveHtml = await fetchPage(archiveUrl);
+
+    // Try with browser first
+    let archiveHtml = await fetchPageWithBrowser(archiveUrl, 'a[href*="/p/"]');
+
+    // Fallback to axios if browser fails
+    if (!archiveHtml) {
+      archiveHtml = await fetchPage(archiveUrl);
+    }
+
     if (!archiveHtml) continue;
 
     const $ = cheerio.load(archiveHtml);
@@ -500,6 +687,7 @@ const NEWSLETTERS: NewsletterConfig[] = [
     archiveUrl: 'https://jamesclear.com/3-2-1',
     category: 'wisdom',
     author: 'James Clear',
+    requiresBrowser: true, // JS-rendered site
     scraper: scrapeJamesClear,
   },
   {
@@ -509,15 +697,17 @@ const NEWSLETTERS: NewsletterConfig[] = [
     archiveUrl: 'https://fs.blog/brain-food/',
     category: 'wisdom',
     author: 'Shane Parrish',
+    requiresBrowser: false, // Static HTML
     scraper: scrapeFarnamStreet,
   },
   {
     name: 'The Curiosity Chronicle',
     senderEmail: 'sahil@sahilbloom.com',
     website: 'https://www.sahilbloom.com/newsletter',
-    archiveUrl: 'https://www.sahilbloom.com/newsletter',
+    archiveUrl: 'https://sahilbloom.substack.com/archive',
     category: 'productivity',
     author: 'Sahil Bloom',
+    requiresBrowser: true, // Substack infinite scroll
     scraper: scrapeSahilBloom,
   },
   {
@@ -527,6 +717,7 @@ const NEWSLETTERS: NewsletterConfig[] = [
     archiveUrl: 'https://alexandbooks.beehiiv.com',
     category: 'wisdom',
     author: 'Alex',
+    requiresBrowser: true, // Beehiiv may use JS
     scraper: scrapeAlexAndBooks,
   },
 ];
@@ -617,7 +808,7 @@ async function saveEditions(config: NewsletterConfig, editions: EditionData[]) {
 
 async function main() {
   console.log('='.repeat(60));
-  console.log('  Newsletter Scraper - ByteLetters');
+  console.log('  Newsletter Scraper - ByteLetters (with Puppeteer)');
   console.log('='.repeat(60));
 
   // Check which newsletters to scrape (can pass as args)
@@ -642,7 +833,20 @@ async function main() {
   }
 
   console.log(`\nScraping ${newslettersToScrape.length} newsletter(s):`);
-  newslettersToScrape.forEach(n => console.log(`  - ${n.name} (${n.archiveUrl})`));
+  newslettersToScrape.forEach(n => {
+    console.log(`  - ${n.name} (${n.archiveUrl}) ${n.requiresBrowser ? '[browser]' : '[static]'}`);
+  });
+
+  // Check if any require browser
+  const needsBrowser = newslettersToScrape.some(n => n.requiresBrowser);
+  if (needsBrowser) {
+    console.log('\n[Info] Some newsletters require headless browser (Puppeteer)');
+    const browserInstance = await initBrowser();
+    if (!browserInstance) {
+      console.log('[Warning] Puppeteer not available. JS-rendered sites may return 0 results.');
+      console.log('[Warning] To fix: npm install puppeteer');
+    }
+  }
 
   let totalSaved = 0;
   let totalSkipped = 0;
@@ -657,6 +861,9 @@ async function main() {
       console.error(`\n[${config.name}] Error:`, error);
     }
   }
+
+  // Close browser if opened
+  await closeBrowser();
 
   // Print queue stats
   console.log('\n' + '='.repeat(60));
