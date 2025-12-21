@@ -132,3 +132,13 @@ export async function trackByteView(byteId: string, dwellTimeMs: number): Promis
     body: JSON.stringify({ dwellTimeMs }),
   });
 }
+
+/**
+ * Fetch popular bytes from the community (for empty feed)
+ */
+export async function fetchPopularBytes(limit: number = 10): Promise<ContentByte[]> {
+  const response = await apiRequest<{ bytes: ByteResponse[]; nextCursor: string | null; hasMore: boolean }>(
+    `/feed?type=popular&limit=${limit}`
+  );
+  return response.bytes.map(toContentByte);
+}

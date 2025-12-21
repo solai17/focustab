@@ -592,6 +592,7 @@ function formatByteResponse(byte: any, userId: string): ContentByteResponse {
       id: byte.edition.source.id,
       name: byte.edition.source.name,
       isVerified: byte.edition.source.isVerified,
+      website: byte.edition.source.website || null,
     },
     engagement: {
       upvotes: byte.upvotes,

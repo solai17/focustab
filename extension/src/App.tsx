@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Settings as SettingsIcon, Bookmark } from 'lucide-react';
+import { Settings as SettingsIcon, Bookmark, Copy, Check } from 'lucide-react';
 import type { UserProfile, ContentByte, VoteValue } from './types';
 import {
   getUserProfile,
@@ -17,6 +17,7 @@ import {
 import {
   fetchNextByte,
   fetchSavedBytes,
+  fetchPopularBytes,
   voteByte,
   toggleSaveByte,
   trackByteView,
@@ -48,8 +49,52 @@ function App() {
   const [queueSize, setQueueSize] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
+  const [emailCopied, setEmailCopied] = useState(false);
+  const [showingCommunityBytes, setShowingCommunityBytes] = useState(false);
+  const [communityBytes, setCommunityBytes] = useState<ContentByte[]>([]);
+  const [communityByteIndex, setCommunityByteIndex] = useState(0);
   // Track if using mock data (offline fallback)
   const usingMockData = useRef(false);
+
+  // Copy email to clipboard
+  const copyEmailToClipboard = async () => {
+    if (profile?.inboxEmail) {
+      try {
+        await navigator.clipboard.writeText(profile.inboxEmail);
+        setEmailCopied(true);
+        setTimeout(() => setEmailCopied(false), 2000);
+      } catch (error) {
+        console.error('Failed to copy email:', error);
+      }
+    }
+  };
+
+  // Load community bytes when user opts in
+  const loadCommunityBytes = async () => {
+    try {
+      const popular = await fetchPopularBytes(20);
+      if (popular.length > 0) {
+        setCommunityBytes(popular);
+        setCurrentByte(popular[0]);
+        setCommunityByteIndex(0);
+        setShowingCommunityBytes(true);
+        setQueueSize(popular.length - 1);
+      } else {
+        // Fall back to mock data if no community bytes
+        usingMockData.current = true;
+        const byte = getNextMockByte();
+        setCurrentByte(byte);
+        setQueueSize(SAMPLE_BYTES.length);
+      }
+    } catch (error) {
+      console.error('Failed to load community bytes:', error);
+      // Fall back to mock data
+      usingMockData.current = true;
+      const byte = getNextMockByte();
+      setCurrentByte(byte);
+      setQueueSize(SAMPLE_BYTES.length);
+    }
+  };
 
   // Helper to load byte and saved bytes from API
   async function loadFromApi(): Promise<{ byte: ContentByte | null; queueSize: number; saved: ContentByte[] }> {
@@ -264,6 +309,15 @@ function App() {
 
   // Handle next byte
   const handleNext = useCallback(async () => {
+    // If showing community bytes, cycle through them
+    if (showingCommunityBytes && communityBytes.length > 0) {
+      const nextIndex = (communityByteIndex + 1) % communityBytes.length;
+      setCommunityByteIndex(nextIndex);
+      setCurrentByte(communityBytes[nextIndex]);
+      setQueueSize(communityBytes.length - nextIndex - 1);
+      return;
+    }
+
     if (usingMockData.current) {
       // Offline/demo mode - use mock data
       const byte = getNextMockByte();
@@ -292,7 +346,7 @@ function App() {
         setQueueSize(SAMPLE_BYTES.length);
       }
     }
-  }, []);
+  }, [showingCommunityBytes, communityBytes, communityByteIndex]);
 
   // Update profile
   const handleUpdateProfile = async (updatedProfile: UserProfile) => {
@@ -412,11 +466,23 @@ function App() {
               queueSize={queueSize}
             />
           ) : (
-            <div className="text-center py-16">
+            <div className="text-center py-16 bg-obsidian/80 backdrop-blur-sm rounded-2xl p-8 border border-ash/30">
               <p className="text-pearl text-lg mb-2">Your feed is empty</p>
-              <p className="text-smoke/60 text-sm">
-                Forward newsletters to start receiving bytes.
+              <p className="text-smoke/60 text-sm mb-6">
+                Forward newsletters to your inbox to start receiving personalized bytes.
               </p>
+
+              <div className="border-t border-ash/30 pt-6">
+                <p className="text-smoke text-sm mb-4">
+                  Or explore wisdom from the community
+                </p>
+                <button
+                  onClick={loadCommunityBytes}
+                  className="px-6 py-3 bg-life/20 hover:bg-life/30 text-life rounded-lg transition-colors font-medium"
+                >
+                  Show Community Bytes
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -424,9 +490,22 @@ function App() {
         {/* Footer */}
         <footer className="mt-12 text-center opacity-0 animate-fade-in animation-delay-500">
           {profile.inboxEmail && (
-            <p className="text-xs text-smoke/40">
-              <code className="text-life/50">{profile.inboxEmail}</code>
-            </p>
+            <div className="flex items-center justify-center gap-2">
+              <p className="text-xs text-smoke/40">
+                <code className="text-life/50">{profile.inboxEmail}</code>
+              </p>
+              <button
+                onClick={copyEmailToClipboard}
+                className="p-1 rounded hover:bg-ash/30 transition-colors"
+                title="Copy email address"
+              >
+                {emailCopied ? (
+                  <Check className="w-3 h-3 text-life" />
+                ) : (
+                  <Copy className="w-3 h-3 text-smoke/40 hover:text-smoke" />
+                )}
+              </button>
+            </div>
           )}
         </footer>
       </main>

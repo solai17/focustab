@@ -2,10 +2,7 @@ import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import crypto from 'crypto';
 import { prisma } from '../services/db';
-import {
-  processNewsletterWithClaude,
-  categorizeNewsletterSource,
-} from '../services/claude';
+import { categorizeNewsletterSource } from '../services/claude';
 import { verifyMailgunSignature, htmlToText, extractSenderName } from '../services/utils';
 import { MailgunWebhookPayload } from '../types';
 
@@ -113,16 +110,6 @@ router.post('/cloudflare', async (req: Request, res: Response) => {
 
     console.log(`[Cloudflare] New edition queued: ${edition.id} for source ${source.name}`);
 
-    // Create legacy Newsletter record for backward compatibility
-    await createLegacyNewsletterFromCloudflare(
-      user.id,
-      senderEmail,
-      finalSenderName,
-      finalSubject,
-      htmlContent || '',
-      finalTextContent
-    );
-
     res.status(200).json({
       message: 'Email received',
       editionId: edition.id,
@@ -134,38 +121,8 @@ router.post('/cloudflare', async (req: Request, res: Response) => {
   }
 });
 
-/**
- * Create legacy newsletter from Cloudflare payload
- */
-async function createLegacyNewsletterFromCloudflare(
-  userId: string,
-  senderEmail: string,
-  senderName: string,
-  subject: string,
-  htmlContent: string,
-  textContent: string
-): Promise<void> {
-  try {
-    const newsletter = await prisma.newsletter.create({
-      data: {
-        userId,
-        senderEmail,
-        senderName,
-        subject,
-        rawContent: htmlContent,
-        textContent,
-        isProcessed: false,
-      },
-    });
-
-    processLegacyNewsletterAsync(newsletter.id, subject, textContent, senderName);
-  } catch (error) {
-    console.error('[Cloudflare] Failed to create legacy newsletter:', error);
-  }
-}
-
 // =============================================================================
-// v2.0 WEBHOOK - Content-Centric Processing
+// MAILGUN WEBHOOK
 // =============================================================================
 
 /**
@@ -258,9 +215,6 @@ router.post('/mailgun', upload.none(), async (req: Request, res: Response) => {
 
     console.log(`[Mailgun] New edition queued: ${edition.id} for source ${source.name}`);
 
-    // Also create legacy Newsletter record for backward compatibility
-    await createLegacyNewsletter(user.id, payload, textContent, senderName);
-
     res.status(200).json({
       message: 'Email received',
       editionId: edition.id,
@@ -346,77 +300,6 @@ async function ensureUserSubscription(
     where: { id: sourceId },
     data: { subscriberCount: { increment: 1 } },
   });
-}
-
-/**
- * Create legacy newsletter record for backward compatibility
- */
-async function createLegacyNewsletter(
-  userId: string,
-  payload: MailgunWebhookPayload,
-  textContent: string,
-  senderName: string
-): Promise<void> {
-  try {
-    const htmlContent = payload['body-html'] || payload['stripped-html'] || '';
-
-    const newsletter = await prisma.newsletter.create({
-      data: {
-        userId,
-        senderEmail: payload.sender,
-        senderName,
-        subject: payload.subject || 'No Subject',
-        rawContent: htmlContent,
-        textContent,
-        isProcessed: false,
-      },
-    });
-
-    // Process with legacy method
-    processLegacyNewsletterAsync(newsletter.id, payload.subject, textContent, senderName);
-  } catch (error) {
-    console.error('Failed to create legacy newsletter:', error);
-  }
-}
-
-/**
- * Legacy newsletter processing (for backward compatibility)
- */
-async function processLegacyNewsletterAsync(
-  newsletterId: string,
-  subject: string,
-  textContent: string,
-  senderName: string
-): Promise<void> {
-  try {
-    const processed = await processNewsletterWithClaude(subject, textContent, senderName);
-
-    const newsletter = await prisma.newsletter.update({
-      where: { id: newsletterId },
-      data: {
-        summary: processed.summary,
-        keyInsight: processed.keyInsight,
-        readTimeMinutes: processed.readTimeMinutes,
-        isProcessed: true,
-        processedAt: new Date(),
-      },
-    });
-
-    if (processed.inspirations.length > 0) {
-      await prisma.inspiration.createMany({
-        data: processed.inspirations.map((insp) => ({
-          userId: newsletter.userId,
-          newsletterId: newsletter.id,
-          quote: insp.quote,
-          author: insp.author || senderName,
-          source: senderName,
-          category: 'wisdom',
-        })),
-      });
-    }
-  } catch (error) {
-    console.error(`Failed to process legacy newsletter ${newsletterId}:`, error);
-  }
 }
 
 // =============================================================================

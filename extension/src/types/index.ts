@@ -40,6 +40,7 @@ export interface ContentByte {
     id: string;
     name: string;
     isVerified: boolean;
+    website?: string | null; // Newsletter subscription URL
   };
   engagement: {
     upvotes: number;
