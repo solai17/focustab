@@ -1,0 +1,35 @@
+<svg width="400" height="100" viewBox="0 0 400 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Icon -->
+  <rect x="8" y="16" width="68" height="68" rx="14" fill="#6366F1"/>
+
+  <!-- Mini pixelated B -->
+  <rect x="18" y="24" width="10" height="10" rx="2" fill="white"/>
+  <rect x="30" y="24" width="10" height="10" rx="2" fill="white"/>
+  <rect x="42" y="24" width="10" height="10" rx="2" fill="white" fill-opacity="0.7"/>
+
+  <rect x="18" y="36" width="10" height="10" rx="2" fill="white"/>
+  <rect x="42" y="36" width="10" height="10" rx="2" fill="white"/>
+  <rect x="54" y="36" width="10" height="10" rx="2" fill="#F59E0B"/>
+
+  <rect x="18" y="48" width="10" height="10" rx="2" fill="white"/>
+  <rect x="30" y="48" width="10" height="10" rx="2" fill="white"/>
+  <rect x="42" y="48" width="10" height="10" rx="2" fill="white" fill-opacity="0.7"/>
+
+  <rect x="18" y="60" width="10" height="10" rx="2" fill="white"/>
+  <rect x="42" y="60" width="10" height="10" rx="2" fill="white"/>
+  <rect x="54" y="60" width="10" height="10" rx="2" fill="#F59E0B"/>
+
+  <rect x="18" y="72" width="10" height="10" rx="2" fill="white"/>
+  <rect x="30" y="72" width="10" height="10" rx="2" fill="white"/>
+  <rect x="42" y="72" width="10" height="10" rx="2" fill="white" fill-opacity="0.7"/>
+
+  <!-- Wordmark -->
+  <text x="92" y="62" font-family="system-ui, -apple-system, sans-serif" font-size="36" font-weight="700" fill="#1E1B4B">
+    <tspan fill="#6366F1">Byte</tspan><tspan fill="#1E1B4B">Letters</tspan>
+  </text>
+
+  <!-- Tagline -->
+  <text x="92" y="82" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="500" fill="#64748B">
+    Byte-sized newsletter wisdom
+  </text>
+</svg>

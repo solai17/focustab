@@ -1,0 +1,25 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Compact byte "B" icon -->
+  <rect width="128" height="128" rx="24" fill="#6366F1"/>
+
+  <!-- Pixelated B -->
+  <rect x="28" y="24" width="16" height="16" rx="3" fill="white"/>
+  <rect x="48" y="24" width="16" height="16" rx="3" fill="white"/>
+  <rect x="68" y="24" width="16" height="16" rx="3" fill="white" fill-opacity="0.7"/>
+
+  <rect x="28" y="44" width="16" height="16" rx="3" fill="white"/>
+  <rect x="68" y="44" width="16" height="16" rx="3" fill="white"/>
+  <rect x="88" y="44" width="16" height="16" rx="3" fill="#F59E0B"/>
+
+  <rect x="28" y="64" width="16" height="16" rx="3" fill="white"/>
+  <rect x="48" y="64" width="16" height="16" rx="3" fill="white"/>
+  <rect x="68" y="64" width="16" height="16" rx="3" fill="white" fill-opacity="0.7"/>
+
+  <rect x="28" y="84" width="16" height="16" rx="3" fill="white"/>
+  <rect x="68" y="84" width="16" height="16" rx="3" fill="white"/>
+  <rect x="88" y="84" width="16" height="16" rx="3" fill="#F59E0B"/>
+
+  <rect x="28" y="104" width="16" height="16" rx="3" fill="white"/>
+  <rect x="48" y="104" width="16" height="16" rx="3" fill="white"/>
+  <rect x="68" y="104" width="16" height="16" rx="3" fill="white" fill-opacity="0.7"/>
+</svg>
