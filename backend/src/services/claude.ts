@@ -170,13 +170,8 @@ ${truncatedContent}`,
     };
   } catch (error) {
     console.error('Error processing edition with Claude:', error);
-
-    // Return minimal defaults on error
-    return {
-      summary: 'Failed to process newsletter content.',
-      readTimeMinutes: Math.ceil(textContent.split(/\s+/).length / 200),
-      bytes: [],
-    };
+    // Throw error so the queue knows processing failed
+    throw new Error(`Failed to process with both Gemini and Claude: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 

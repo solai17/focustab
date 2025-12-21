@@ -162,8 +162,8 @@ export async function extractBytesWithGemini(
   }
 
   try {
-    // Use Gemini 3 Flash for best quality (outperforms 2.5 Pro!)
-    const model = process.env.GEMINI_MODEL || 'gemini-3-flash';
+    // Use Gemini 2.0 Flash for best quality/speed balance
+    const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 
     // Use extended prompt if we need to extract source info
     const prompt = extractSourceInfo
