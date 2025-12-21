@@ -73,6 +73,7 @@ export interface ContentByteResponse {
     id: string;
     name: string;
     isVerified: boolean;
+    website: string | null; // Newsletter subscription URL (extracted by AI)
   };
   engagement: {
     upvotes: number;
@@ -132,17 +133,6 @@ export interface ProcessedEdition {
   summary: string;
   readTimeMinutes: number;
   bytes: ExtractedByte[];
-}
-
-// Legacy type for backward compatibility
-export interface ProcessedNewsletter {
-  inspirations: Array<{
-    quote: string;
-    author: string;
-  }>;
-  summary: string;
-  keyInsight: string;
-  readTimeMinutes: number;
 }
 
 // =============================================================================

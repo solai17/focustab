@@ -7,6 +7,7 @@ import {
   RefreshCw,
   CheckCircle,
   Sparkles,
+  ExternalLink,
 } from 'lucide-react';
 import type { ContentByte, VoteValue } from '../types';
 
@@ -113,7 +114,16 @@ export function ByteCard({
             {byte.source.isVerified && (
               <CheckCircle className="w-4 h-4 text-life" />
             )}
-            <span>{byte.source.name}</span>
+            <a
+              href={byte.source.website || `https://www.google.com/search?q=${encodeURIComponent(byte.source.name + ' newsletter subscribe')}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 hover:text-life transition-colors group"
+              title={byte.source.website ? `Subscribe to ${byte.source.name}` : `Find ${byte.source.name} newsletter`}
+            >
+              <span>{byte.source.name}</span>
+              <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </a>
             {byte.isSponsored && (
               <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 text-xs rounded">
                 Sponsored

@@ -73,13 +73,20 @@ export async function getNextBatch(limit: number = MAX_BATCH_SIZE) {
   });
 
   // Get pending editions, prioritizing older ones
+  // Include source with website field to determine if we need to extract source info
   return prisma.edition.findMany({
     where: {
       processingStatus: 'pending',
       processAttempts: { lt: MAX_ATTEMPTS },
     },
     include: {
-      source: true,
+      source: {
+        select: {
+          id: true,
+          name: true,
+          website: true,
+        },
+      },
     },
     orderBy: { receivedAt: 'asc' },
     take: limit,
@@ -94,7 +101,7 @@ export async function processEdition(
     id: string;
     subject: string;
     textContent: string;
-    source: { name: string; id: string };
+    source: { name: string; id: string; website: string | null };
   }
 ): Promise<ProcessingResult> {
   const { id, subject, textContent, source } = edition;
@@ -109,10 +116,37 @@ export async function processEdition(
       },
     });
 
-    console.log(`[Queue] Processing: "${subject}" from ${source.name}`);
+    // Check if we need to extract source info (only for sources without website)
+    const needSourceInfo = source.website === null;
+
+    console.log(`[Queue] Processing: "${subject}" from ${source.name}${needSourceInfo ? ' (extracting source info)' : ''}`);
 
     // Process with AI (Gemini primary, Claude fallback)
-    const result = await processEditionWithClaude(subject, textContent, source.name);
+    // Pass extractSourceInfo flag if source doesn't have website yet
+    const result = await processEditionWithClaude(subject, textContent, source.name, needSourceInfo);
+
+    // Update source with extracted info if available
+    if (needSourceInfo && result.newsletterInfo) {
+      const updateData: { name?: string; website?: string } = {};
+
+      // Update name if AI found a better one (and it's different from email-derived name)
+      if (result.newsletterInfo.name && result.newsletterInfo.name !== source.name) {
+        updateData.name = result.newsletterInfo.name;
+      }
+
+      // Update website if found
+      if (result.newsletterInfo.website) {
+        updateData.website = result.newsletterInfo.website;
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        await prisma.newsletterSource.update({
+          where: { id: source.id },
+          data: updateData,
+        });
+        console.log(`[Queue] Updated source: name=${updateData.name || source.name}, website=${updateData.website || 'not found'}`);
+      }
+    }
 
     // Save extracted bytes
     if (result.bytes.length > 0) {

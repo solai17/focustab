@@ -90,13 +90,7 @@ async function cleanupDatabase(keepUsers: boolean = false) {
   const deletedSources = await prisma.newsletterSource.deleteMany();
   console.log(`  ✓ Deleted ${deletedSources.count} newsletter sources`);
 
-  // 8. Delete legacy data
-  const deletedLegacyNewsletters = await prisma.newsletter.deleteMany();
-  const deletedLegacyInspirations = await prisma.inspiration.deleteMany();
-  console.log(`  ✓ Deleted ${deletedLegacyNewsletters.count} legacy newsletters`);
-  console.log(`  ✓ Deleted ${deletedLegacyInspirations.count} legacy inspirations`);
-
-  // 9. Optionally delete users
+  // 8. Optionally delete users
   if (!keepUsers) {
     const deleteUsers = await confirmAction('\n🔐 Delete all users too?');
     if (deleteUsers) {

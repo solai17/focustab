@@ -381,18 +381,31 @@ async function getPopularFeed(
   limit: number,
   cursor?: string
 ) {
-  return prisma.contentByte.findMany({
+  // Get more bytes to sort by combined score
+  const bytes = await prisma.contentByte.findMany({
     where: {
       id: { notIn: excludeIds },
-      ...(cursor && { engagementScore: { lt: parseFloat(cursor) } }),
     },
     include: {
       edition: { include: { source: true } },
       engagements: { where: { userId }, take: 1 },
     },
-    orderBy: { engagementScore: 'desc' },
-    take: limit,
+    orderBy: [
+      { qualityScore: 'desc' },
+      { engagementScore: 'desc' },
+    ],
+    take: limit * 2,
   });
+
+  // Sort by combined quality + engagement score
+  // This ensures high-quality new content surfaces even without engagement
+  const sorted = bytes.sort((a, b) => {
+    const scoreA = (a.qualityScore || 0.5) * 0.4 + Math.min(a.engagementScore / 100, 1) * 0.6;
+    const scoreB = (b.qualityScore || 0.5) * 0.4 + Math.min(b.engagementScore / 100, 1) * 0.6;
+    return scoreB - scoreA;
+  });
+
+  return sorted.slice(0, limit);
 }
 
 async function getTrendingFeed(
@@ -482,8 +495,8 @@ async function getPersonalizedFeed(
     preferences.map((p) => [p.category, p.weight])
   );
 
-  // Calculate mix ratios
-  const hasPreferences = preferences.length > 0;
+  // Check if user is new (no preferences = cold start)
+  const isNewUser = preferences.length === 0;
 
   // Get bytes with a mix strategy
   const bytes = await prisma.contentByte.findMany({
@@ -497,6 +510,7 @@ async function getPersonalizedFeed(
       engagements: { where: { userId }, take: 1 },
     },
     orderBy: [
+      { qualityScore: 'desc' },  // Prioritize high-quality content
       { engagementScore: 'desc' },
       { createdAt: 'desc' },
     ],
@@ -504,13 +518,25 @@ async function getPersonalizedFeed(
   });
 
   // Score and sort by personalization
+  // For NEW users: rely heavily on qualityScore + engagementScore
+  // For existing users: add category preferences
   const scoredBytes = bytes.map((byte) => {
-    const categoryWeight = categoryWeights.get(byte.category) || 0.5;
-    const engagementBoost = byte.engagementScore * 0.4;
-    const recencyBoost =
-      (1 - (Date.now() - byte.createdAt.getTime()) / (7 * 24 * 60 * 60 * 1000)) * 0.2;
-    const personalScore =
-      categoryWeight * 0.3 + engagementBoost + Math.max(0, recencyBoost);
+    // Quality score from AI (0-1) - most important for new users
+    const qualityBoost = (byte.qualityScore || 0.5) * (isNewUser ? 0.5 : 0.25);
+
+    // Engagement score from community (normalized)
+    const maxEngagement = 100; // Normalize engagement
+    const normalizedEngagement = Math.min(byte.engagementScore / maxEngagement, 1);
+    const engagementBoost = normalizedEngagement * (isNewUser ? 0.35 : 0.25);
+
+    // Category preference (only for users with preferences)
+    const categoryWeight = isNewUser ? 0 : (categoryWeights.get(byte.category) || 0.5) * 0.3;
+
+    // Recency boost (newer content gets slight boost)
+    const ageInDays = (Date.now() - byte.createdAt.getTime()) / (24 * 60 * 60 * 1000);
+    const recencyBoost = Math.max(0, (1 - ageInDays / 30)) * 0.15; // Decay over 30 days
+
+    const personalScore = qualityBoost + engagementBoost + categoryWeight + recencyBoost;
 
     return { byte, score: personalScore };
   });
@@ -592,6 +618,7 @@ function formatByteResponse(byte: any, userId: string): ContentByteResponse {
       id: byte.edition.source.id,
       name: byte.edition.source.name,
       isVerified: byte.edition.source.isVerified,
+      website: byte.edition.source.website || null,
     },
     engagement: {
       upvotes: byte.upvotes,
