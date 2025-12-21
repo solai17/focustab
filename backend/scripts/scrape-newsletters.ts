@@ -447,11 +447,11 @@ async function scrapeSahilBloom(config: NewsletterConfig): Promise<EditionData[]
       const maxScrolls = 20; // Limit scrolling
 
       while (scrollAttempts < maxScrolls) {
-        const currentHeight = await page.evaluate(() => document.body.scrollHeight);
+        const currentHeight = await page.evaluate('document.body.scrollHeight') as number;
         if (currentHeight === previousHeight) break;
 
         previousHeight = currentHeight;
-        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await page.evaluate('window.scrollTo(0, document.body.scrollHeight)');
         await sleep(2000);
         scrollAttempts++;
         console.log(`  [${config.name}] Scrolled ${scrollAttempts} times, height: ${currentHeight}`);
