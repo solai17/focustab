@@ -1,298 +1,691 @@
 /**
- * Newsletter Scraper - Fetch content from public newsletter archives
+ * Newsletter Scraper
  *
- * Uses Google Gemini Flash 2.0 (FREE: 1,500 requests/day)
- * Falls back to Claude if Gemini fails
+ * Scrapes newsletter archives and saves editions to the processing queue.
+ * Processing happens via the queue system (Gemini with rate limiting).
  *
- * Usage: npx ts-node scripts/scrape-newsletters.ts [--source=url]
+ * Newsletters:
+ * 1. James Clear 3-2-1 - https://jamesclear.com/3-2-1
+ * 2. Farnam Street Brain Food - https://fs.blog/brain-food/
+ * 3. Sahil Bloom Curiosity Chronicle - https://www.sahilbloom.com/newsletter
+ * 4. Alex and Books - https://alexandbooks.beehiiv.com/
  *
- * Setup:
- *   1. Get free API key: https://aistudio.google.com/apikey
- *   2. Add to .env: GEMINI_API_KEY=your_key
+ * Usage:
+ *   npm run scrape                    # Scrape all newsletters
+ *   npm run scrape -- james           # Scrape only James Clear
+ *   npm run scrape -- farnam sahil    # Scrape Farnam Street and Sahil Bloom
  */
 
-import { PrismaClient } from '@prisma/client';
-import { GoogleGenAI } from '@google/genai';
-import * as crypto from 'crypto';
+import axios from 'axios';
+import * as cheerio from 'cheerio';
+import { prisma } from '../src/services/db';
+import crypto from 'crypto';
 
-const prisma = new PrismaClient();
+// Configuration
+const DELAY_BETWEEN_REQUESTS = 2000; // 2 seconds between requests
+const MAX_EDITIONS_PER_SOURCE = 150; // Limit for initial scrape
 
-// Initialize Gemini client
-const geminiApiKey = process.env.GEMINI_API_KEY;
-const gemini = geminiApiKey ? new GoogleGenAI({ apiKey: geminiApiKey }) : null;
-
-// Public newsletter archives to scrape
-const PUBLIC_ARCHIVES = [
-  {
-    name: 'James Clear',
-    archiveUrl: 'https://jamesclear.com/3-2-1',
-    type: 'blog',
-    category: 'productivity',
-  },
-  {
-    name: 'Sahil Bloom',
-    archiveUrl: 'https://www.sahilbloom.com/newsletter',
-    type: 'substack',
-    category: 'life',
-  },
-  {
-    name: 'Paul Graham Essays',
-    archiveUrl: 'https://paulgraham.com/articles.html',
-    type: 'blog',
-    category: 'business',
-  },
-];
-
-const BYTE_EXTRACTION_PROMPT = `You are a master curator extracting transformative insights from this content.
-
-Extract 3-5 "bytes" - bite-sized pieces of wisdom that make someone stop and think.
-
-BYTE TYPES:
-- quote: A memorable statement (requires author)
-- insight: A non-obvious truth that shifts perspective
-- statistic: A number that changes how you see something
-- action: A specific thing you can do TODAY
-- takeaway: A key lesson or principle
-- mental_model: A framework for thinking about problems
-- counterintuitive: Something that goes against common wisdom
-
-REQUIREMENTS:
-- Each byte: 1-4 sentences, max 100 words
-- Must be self-contained (understandable without context)
-- Focus on timeless wisdom, not dated facts
-- Quality over quantity
-
-Return ONLY valid JSON (no markdown, no code blocks):
-{
-  "bytes": [
-    {
-      "content": "The actual insight...",
-      "type": "insight",
-      "author": "Name or null",
-      "context": "Brief context (2-4 words)",
-      "category": "wisdom|productivity|business|tech|life|creativity|leadership|finance|health",
-      "qualityScore": 0.85
-    }
-  ]
+interface NewsletterConfig {
+  name: string;
+  senderEmail: string;
+  website: string;
+  archiveUrl: string;
+  category: string;
+  author: string;
+  scraper: (config: NewsletterConfig) => Promise<EditionData[]>;
 }
 
-CONTENT TO ANALYZE:
-`;
-
-async function fetchContent(url: string): Promise<string | null> {
-  try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'ByteLetters/1.0 (Content Curation Bot)',
-      },
-    });
-
-    if (!response.ok) {
-      console.error(`  ❌ Failed to fetch ${url}: ${response.status}`);
-      return null;
-    }
-
-    const html = await response.text();
-
-    // Basic HTML to text conversion
-    const text = html
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    return text.substring(0, 10000); // Limit to 10k chars
-  } catch (error) {
-    console.error(`  ❌ Error fetching ${url}:`, error);
-    return null;
-  }
+interface EditionData {
+  subject: string;
+  url: string;
+  content: string;
+  htmlContent?: string;
+  publishedAt: Date;
+  isSponsored?: boolean;
 }
 
-async function extractBytesWithGemini(
-  content: string,
-  sourceName: string
-): Promise<any[]> {
-  if (!gemini) {
-    console.error('  ❌ Gemini API key not configured. Set GEMINI_API_KEY in .env');
-    return [];
-  }
+// =============================================================================
+// UTILITY FUNCTIONS
+// =============================================================================
 
-  try {
-    console.log('  🤖 Using Gemini 3 Flash (FREE tier)...');
-
-    // Use Gemini 3 Flash for best quality
-    const model = process.env.GEMINI_MODEL || 'gemini-3-flash';
-
-    const response = await gemini.models.generateContent({
-      model,
-      contents: BYTE_EXTRACTION_PROMPT + content.substring(0, 8000),
-    });
-
-    const responseText = response.text || '';
-
-    // Parse JSON from response (handle potential markdown wrapping)
-    let jsonStr = responseText;
-
-    // Remove markdown code blocks if present
-    const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonMatch) {
-      jsonStr = jsonMatch[1];
-    }
-
-    // Find JSON object
-    const objectMatch = jsonStr.match(/\{[\s\S]*\}/);
-    if (!objectMatch) {
-      console.error('  ❌ Could not find JSON in Gemini response');
-      console.log('  Response:', responseText.substring(0, 200));
-      return [];
-    }
-
-    const parsed = JSON.parse(objectMatch[0]);
-    return parsed.bytes || [];
-  } catch (error) {
-    console.error(`  ❌ Gemini extraction error:`, error);
-    return [];
-  }
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function generateContentHash(content: string): string {
-  return crypto
-    .createHash('sha256')
-    .update(content)
-    .digest('hex')
-    .substring(0, 32);
+  return crypto.createHash('sha256').update(content).digest('hex');
 }
 
-async function scrapeAndProcess(
-  name: string,
-  url: string,
-  category: string
-): Promise<number> {
-  console.log(`\n📰 Scraping: ${name}`);
-  console.log(`   URL: ${url}`);
+async function fetchPage(url: string, retries = 3): Promise<string> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await axios.get(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+        },
+        timeout: 30000,
+      });
+      return response.data;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`  [Attempt ${attempt}/${retries}] Failed to fetch ${url}: ${msg}`);
+      if (attempt < retries) {
+        await sleep(2000 * attempt);
+      }
+    }
+  }
+  return '';
+}
 
-  // 1. Fetch content
-  const content = await fetchContent(url);
-  if (!content) return 0;
+function extractText(html: string): string {
+  const $ = cheerio.load(html);
+  // Remove scripts, styles, and navigation elements
+  $('script, style, nav, header, footer, aside, .sidebar, .menu, .navigation').remove();
+  return $('body').text().replace(/\s+/g, ' ').trim();
+}
 
-  console.log(`   ✓ Fetched ${content.length} chars`);
+function cleanTitle(title: string): string {
+  return title
+    .replace(/\s+/g, ' ')
+    .replace(/^\s*[-–—]\s*/, '')
+    .trim()
+    .substring(0, 200);
+}
 
-  // 2. Find or create source
-  const senderEmail = `scraper@${new URL(url).hostname}`;
+// =============================================================================
+// JAMES CLEAR 3-2-1 NEWSLETTER SCRAPER
+// =============================================================================
+
+async function scrapeJamesClear(config: NewsletterConfig): Promise<EditionData[]> {
+  console.log(`\n[${config.name}] Starting scrape...`);
+  const editions: EditionData[] = [];
+
+  // James Clear lists all 3-2-1 editions on the main page
+  const archiveHtml = await fetchPage(config.archiveUrl);
+  if (!archiveHtml) return editions;
+
+  const $ = cheerio.load(archiveHtml);
+  const links: { url: string; title: string }[] = [];
+
+  // Find all newsletter edition links
+  // James Clear uses format: /3-2-1/month-day-year
+  $('a').each((_, el) => {
+    const href = $(el).attr('href') || '';
+    const text = $(el).text().trim();
+
+    // Match 3-2-1 newsletter links
+    if (href.includes('/3-2-1/') && !href.endsWith('/3-2-1/') && !href.endsWith('/3-2-1')) {
+      const fullUrl = href.startsWith('http') ? href : `https://jamesclear.com${href}`;
+      if (!links.find(l => l.url === fullUrl)) {
+        // Extract title from text or URL
+        const title = text.length > 10 ? text : href.split('/').pop()?.replace(/-/g, ' ') || 'Newsletter';
+        links.push({ url: fullUrl, title: cleanTitle(title) });
+      }
+    }
+  });
+
+  console.log(`[${config.name}] Found ${links.length} edition links`);
+
+  // Scrape each edition
+  const toScrape = links.slice(0, MAX_EDITIONS_PER_SOURCE);
+  for (let i = 0; i < toScrape.length; i++) {
+    const { url, title } = toScrape[i];
+    console.log(`[${config.name}] Scraping ${i + 1}/${toScrape.length}: ${title.substring(0, 50)}...`);
+
+    await sleep(DELAY_BETWEEN_REQUESTS);
+    const pageHtml = await fetchPage(url);
+    if (!pageHtml) continue;
+
+    const page$ = cheerio.load(pageHtml);
+
+    // Remove unwanted elements
+    page$('nav, header, footer, .sidebar, .related-posts, .comments, script, style').remove();
+
+    // Extract article content
+    const articleHtml = page$('article').html() ||
+                        page$('.post-content').html() ||
+                        page$('.entry-content').html() ||
+                        page$('main').html() || '';
+
+    const articleText = extractText(articleHtml);
+
+    if (articleText.length > 200) {
+      // Extract date
+      const dateStr = page$('time').attr('datetime') ||
+                     page$('meta[property="article:published_time"]').attr('content') ||
+                     page$('.date').text();
+
+      let publishedAt = new Date();
+      if (dateStr) {
+        const parsed = new Date(dateStr);
+        if (!isNaN(parsed.getTime())) {
+          publishedAt = parsed;
+        }
+      }
+
+      editions.push({
+        subject: `3-2-1: ${title}`,
+        url,
+        content: articleText,
+        htmlContent: articleHtml,
+        publishedAt,
+      });
+    }
+  }
+
+  console.log(`[${config.name}] Scraped ${editions.length} editions`);
+  return editions;
+}
+
+// =============================================================================
+// FARNAM STREET BRAIN FOOD SCRAPER
+// =============================================================================
+
+async function scrapeFarnamStreet(config: NewsletterConfig): Promise<EditionData[]> {
+  console.log(`\n[${config.name}] Starting scrape...`);
+  const editions: EditionData[] = [];
+  const seenUrls = new Set<string>();
+
+  // FS Blog has paginated archives
+  let page = 1;
+  const maxPages = 50;
+
+  while (page <= maxPages && editions.length < MAX_EDITIONS_PER_SOURCE) {
+    const pageUrl = page === 1
+      ? config.archiveUrl
+      : `${config.archiveUrl}page/${page}/`;
+
+    console.log(`[${config.name}] Fetching archive page ${page}...`);
+    const archiveHtml = await fetchPage(pageUrl);
+
+    if (!archiveHtml) {
+      break;
+    }
+
+    const $ = cheerio.load(archiveHtml);
+    const links: { url: string; title: string }[] = [];
+
+    // Find Brain Food article links
+    $('a').each((_, el) => {
+      const href = $(el).attr('href') || '';
+      const text = $(el).text().trim();
+
+      // Brain Food posts have URLs like /brain-food/...
+      if (href.includes('/brain-food/') && !href.endsWith('/brain-food/')) {
+        const fullUrl = href.startsWith('http') ? href : `https://fs.blog${href}`;
+        if (!seenUrls.has(fullUrl) && text.length > 5) {
+          seenUrls.add(fullUrl);
+          links.push({ url: fullUrl, title: cleanTitle(text) });
+        }
+      }
+    });
+
+    if (links.length === 0) {
+      console.log(`[${config.name}] No more links found on page ${page}`);
+      break;
+    }
+
+    console.log(`[${config.name}] Found ${links.length} links on page ${page}`);
+
+    // Scrape each edition
+    for (const { url, title } of links) {
+      if (editions.length >= MAX_EDITIONS_PER_SOURCE) break;
+
+      console.log(`[${config.name}] Scraping: ${title.substring(0, 50)}...`);
+      await sleep(DELAY_BETWEEN_REQUESTS);
+
+      const pageHtml = await fetchPage(url);
+      if (!pageHtml) continue;
+
+      const page$ = cheerio.load(pageHtml);
+      page$('nav, header, footer, .sidebar, .related, .comments, script, style').remove();
+
+      const articleHtml = page$('article .entry-content').html() ||
+                          page$('.post-content').html() ||
+                          page$('article').html() || '';
+
+      const articleText = extractText(articleHtml);
+
+      if (articleText.length > 200) {
+        const dateStr = page$('time').attr('datetime') ||
+                       page$('meta[property="article:published_time"]').attr('content');
+
+        let publishedAt = new Date();
+        if (dateStr) {
+          const parsed = new Date(dateStr);
+          if (!isNaN(parsed.getTime())) {
+            publishedAt = parsed;
+          }
+        }
+
+        editions.push({
+          subject: `Brain Food: ${title}`,
+          url,
+          content: articleText,
+          htmlContent: articleHtml,
+          publishedAt,
+        });
+      }
+    }
+
+    page++;
+    await sleep(DELAY_BETWEEN_REQUESTS);
+  }
+
+  console.log(`[${config.name}] Scraped ${editions.length} editions`);
+  return editions;
+}
+
+// =============================================================================
+// SAHIL BLOOM CURIOSITY CHRONICLE SCRAPER
+// =============================================================================
+
+async function scrapeSahilBloom(config: NewsletterConfig): Promise<EditionData[]> {
+  console.log(`\n[${config.name}] Starting scrape...`);
+  const editions: EditionData[] = [];
+  const seenUrls = new Set<string>();
+
+  // Try multiple archive sources
+  const archiveUrls = [
+    'https://www.sahilbloom.com/newsletter',
+    'https://sahilbloom.substack.com/archive',
+  ];
+
+  for (const archiveUrl of archiveUrls) {
+    if (editions.length >= MAX_EDITIONS_PER_SOURCE) break;
+
+    console.log(`[${config.name}] Trying archive: ${archiveUrl}`);
+    const archiveHtml = await fetchPage(archiveUrl);
+    if (!archiveHtml) continue;
+
+    const $ = cheerio.load(archiveHtml);
+    const links: { url: string; title: string }[] = [];
+
+    // Look for post links (Substack uses /p/ pattern)
+    $('a').each((_, el) => {
+      const href = $(el).attr('href') || '';
+      const text = $(el).text().trim();
+
+      if ((href.includes('/p/') || href.includes('/posts/')) && text.length > 5) {
+        let fullUrl = href;
+        if (!href.startsWith('http')) {
+          if (archiveUrl.includes('substack')) {
+            fullUrl = `https://sahilbloom.substack.com${href}`;
+          } else {
+            fullUrl = `https://www.sahilbloom.com${href}`;
+          }
+        }
+
+        if (!seenUrls.has(fullUrl)) {
+          seenUrls.add(fullUrl);
+          links.push({ url: fullUrl, title: cleanTitle(text) });
+        }
+      }
+    });
+
+    console.log(`[${config.name}] Found ${links.length} edition links`);
+
+    // Scrape each edition
+    for (let i = 0; i < links.length && editions.length < MAX_EDITIONS_PER_SOURCE; i++) {
+      const { url, title } = links[i];
+      console.log(`[${config.name}] Scraping ${editions.length + 1}/${Math.min(links.length, MAX_EDITIONS_PER_SOURCE)}: ${title.substring(0, 50)}...`);
+
+      await sleep(DELAY_BETWEEN_REQUESTS);
+      const pageHtml = await fetchPage(url);
+      if (!pageHtml) continue;
+
+      const page$ = cheerio.load(pageHtml);
+      page$('nav, header, footer, .sidebar, script, style, .subscribe-widget').remove();
+
+      const articleHtml = page$('.post-content').html() ||
+                          page$('.body').html() ||
+                          page$('article').html() ||
+                          page$('main').html() || '';
+
+      const articleText = extractText(articleHtml);
+
+      if (articleText.length > 200) {
+        const dateStr = page$('time').attr('datetime') ||
+                       page$('meta[property="article:published_time"]').attr('content');
+
+        let publishedAt = new Date();
+        if (dateStr) {
+          const parsed = new Date(dateStr);
+          if (!isNaN(parsed.getTime())) {
+            publishedAt = parsed;
+          }
+        }
+
+        editions.push({
+          subject: title,
+          url,
+          content: articleText,
+          htmlContent: articleHtml,
+          publishedAt,
+        });
+      }
+    }
+
+    await sleep(DELAY_BETWEEN_REQUESTS);
+  }
+
+  console.log(`[${config.name}] Scraped ${editions.length} editions`);
+  return editions;
+}
+
+// =============================================================================
+// ALEX AND BOOKS SCRAPER (BEEHIIV)
+// =============================================================================
+
+async function scrapeAlexAndBooks(config: NewsletterConfig): Promise<EditionData[]> {
+  console.log(`\n[${config.name}] Starting scrape...`);
+  const editions: EditionData[] = [];
+  const seenUrls = new Set<string>();
+
+  // Beehiiv newsletters have posts at /p/
+  const archiveUrls = [
+    config.archiveUrl,
+    `${config.archiveUrl}/archive`,
+  ];
+
+  for (const archiveUrl of archiveUrls) {
+    if (editions.length >= MAX_EDITIONS_PER_SOURCE) break;
+
+    console.log(`[${config.name}] Trying archive: ${archiveUrl}`);
+    const archiveHtml = await fetchPage(archiveUrl);
+    if (!archiveHtml) continue;
+
+    const $ = cheerio.load(archiveHtml);
+    const links: { url: string; title: string }[] = [];
+
+    // Beehiiv post links contain /p/
+    $('a[href*="/p/"]').each((_, el) => {
+      const href = $(el).attr('href') || '';
+      const text = $(el).text().trim();
+
+      if (text.length > 5) {
+        const fullUrl = href.startsWith('http') ? href : `https://alexandbooks.beehiiv.com${href}`;
+        if (!seenUrls.has(fullUrl)) {
+          seenUrls.add(fullUrl);
+          links.push({ url: fullUrl, title: cleanTitle(text) });
+        }
+      }
+    });
+
+    console.log(`[${config.name}] Found ${links.length} edition links`);
+
+    // Scrape each edition, skip sponsored
+    for (let i = 0; i < links.length && editions.length < MAX_EDITIONS_PER_SOURCE; i++) {
+      const { url, title } = links[i];
+
+      // Skip obvious sponsored posts by title
+      const lowerTitle = title.toLowerCase();
+      if (lowerTitle.includes('sponsor') ||
+          lowerTitle.includes('partner') ||
+          lowerTitle.includes('presented by') ||
+          lowerTitle.includes('brought to you by') ||
+          lowerTitle.includes('[ad]')) {
+        console.log(`[${config.name}] Skipping (sponsored title): ${title.substring(0, 50)}...`);
+        continue;
+      }
+
+      console.log(`[${config.name}] Scraping ${editions.length + 1}: ${title.substring(0, 50)}...`);
+      await sleep(DELAY_BETWEEN_REQUESTS);
+
+      const pageHtml = await fetchPage(url);
+      if (!pageHtml) continue;
+
+      const page$ = cheerio.load(pageHtml);
+
+      // Check for sponsored content markers in page
+      const pageText = page$('body').text().toLowerCase();
+      if (pageText.includes('this post is sponsored') ||
+          pageText.includes('sponsored by') ||
+          pageText.includes('paid partnership') ||
+          pageText.includes('this is a paid advertisement')) {
+        console.log(`[${config.name}] Skipping (sponsored content): ${title.substring(0, 50)}...`);
+        continue;
+      }
+
+      page$('nav, header, footer, .sidebar, script, style, .subscribe-widget').remove();
+
+      const articleHtml = page$('.post-content').html() ||
+                          page$('article').html() ||
+                          page$('.content').html() ||
+                          page$('main').html() || '';
+
+      const articleText = extractText(articleHtml);
+
+      if (articleText.length > 200) {
+        const dateStr = page$('time').attr('datetime') ||
+                       page$('meta[property="article:published_time"]').attr('content');
+
+        let publishedAt = new Date();
+        if (dateStr) {
+          const parsed = new Date(dateStr);
+          if (!isNaN(parsed.getTime())) {
+            publishedAt = parsed;
+          }
+        }
+
+        editions.push({
+          subject: title,
+          url,
+          content: articleText,
+          htmlContent: articleHtml,
+          publishedAt,
+          isSponsored: false,
+        });
+      }
+    }
+
+    await sleep(DELAY_BETWEEN_REQUESTS);
+  }
+
+  console.log(`[${config.name}] Scraped ${editions.length} editions (excluding sponsored)`);
+  return editions;
+}
+
+// =============================================================================
+// NEWSLETTER CONFIGURATIONS
+// =============================================================================
+
+const NEWSLETTERS: NewsletterConfig[] = [
+  {
+    name: 'James Clear',
+    senderEmail: 'james@jamesclear.com',
+    website: 'https://jamesclear.com/3-2-1',
+    archiveUrl: 'https://jamesclear.com/3-2-1',
+    category: 'wisdom',
+    author: 'James Clear',
+    scraper: scrapeJamesClear,
+  },
+  {
+    name: 'Farnam Street',
+    senderEmail: 'newsletter@fs.blog',
+    website: 'https://fs.blog/newsletter/',
+    archiveUrl: 'https://fs.blog/brain-food/',
+    category: 'wisdom',
+    author: 'Shane Parrish',
+    scraper: scrapeFarnamStreet,
+  },
+  {
+    name: 'The Curiosity Chronicle',
+    senderEmail: 'sahil@sahilbloom.com',
+    website: 'https://www.sahilbloom.com/newsletter',
+    archiveUrl: 'https://www.sahilbloom.com/newsletter',
+    category: 'productivity',
+    author: 'Sahil Bloom',
+    scraper: scrapeSahilBloom,
+  },
+  {
+    name: 'Alex and Books',
+    senderEmail: 'alex@alexandbooks.com',
+    website: 'https://alexandbooks.beehiiv.com/',
+    archiveUrl: 'https://alexandbooks.beehiiv.com',
+    category: 'wisdom',
+    author: 'Alex',
+    scraper: scrapeAlexAndBooks,
+  },
+];
+
+// =============================================================================
+// DATABASE FUNCTIONS
+// =============================================================================
+
+async function saveEditions(config: NewsletterConfig, editions: EditionData[]) {
+  console.log(`\n[${config.name}] Saving ${editions.length} editions to database...`);
+
+  // Create or get newsletter source
   let source = await prisma.newsletterSource.findUnique({
-    where: { senderEmail },
+    where: { senderEmail: config.senderEmail },
   });
 
   if (!source) {
     source = await prisma.newsletterSource.create({
       data: {
-        name,
-        senderEmail,
-        senderDomain: new URL(url).hostname,
-        category,
-        description: `Content scraped from ${name}`,
-        isVerified: false,
+        name: config.name,
+        senderEmail: config.senderEmail,
+        senderDomain: config.senderEmail.split('@')[1],
+        website: config.website,
+        category: config.category,
+        description: `${config.name} by ${config.author}`,
+        isVerified: true, // Curated quality sources
       },
     });
-    console.log(`   ✓ Created source`);
-  }
-
-  // 3. Create edition
-  const contentHash = generateContentHash(url + Date.now());
-  const edition = await prisma.edition.create({
-    data: {
-      sourceId: source.id,
-      subject: `Scraped: ${name} - ${new Date().toLocaleDateString()}`,
-      contentHash,
-      rawContent: content.substring(0, 5000),
-      textContent: content.substring(0, 5000),
-      isProcessed: true,
-      processedAt: new Date(),
-    },
-  });
-  console.log(`   ✓ Created edition`);
-
-  // 4. Extract bytes with Gemini (FREE!)
-  const bytes = await extractBytesWithGemini(content, name);
-  console.log(`   ✓ Extracted ${bytes.length} bytes`);
-
-  // 5. Save bytes to database
-  let saved = 0;
-  for (const byte of bytes) {
-    // Skip low quality
-    if ((byte.qualityScore || 0) < 0.6) continue;
-
-    // Check for duplicates
-    const existing = await prisma.contentByte.findFirst({
-      where: { content: byte.content },
-    });
-    if (existing) continue;
-
-    await prisma.contentByte.create({
-      data: {
-        editionId: edition.id,
-        content: byte.content,
-        type: byte.type || 'insight',
-        author: byte.author || null,
-        context: byte.context || null,
-        category: byte.category || category,
-        qualityScore: byte.qualityScore || 0.7,
-      },
-    });
-    saved++;
-  }
-
-  console.log(`   ✓ Saved ${saved} bytes to database`);
-  return saved;
-}
-
-async function main() {
-  console.log('🕷️  ByteLetters Newsletter Scraper');
-  console.log('   Using: Gemini Flash 2.0 (FREE: 1,500 req/day)\n');
-  console.log('='.repeat(50));
-
-  if (!geminiApiKey) {
-    console.error('\n❌ GEMINI_API_KEY not set!');
-    console.log('\nTo get a FREE API key:');
-    console.log('  1. Go to: https://aistudio.google.com/apikey');
-    console.log('  2. Create a key');
-    console.log('  3. Add to .env: GEMINI_API_KEY=your_key\n');
-    process.exit(1);
-  }
-
-  // Check for command line URL
-  const customUrl = process.argv.find((arg) => arg.startsWith('--source='));
-  if (customUrl) {
-    const url = customUrl.split('=')[1];
-    await scrapeAndProcess('Custom Source', url, 'general');
+    console.log(`[${config.name}] Created newsletter source`);
   } else {
-    // Scrape default archives
-    let totalBytes = 0;
-    for (const archive of PUBLIC_ARCHIVES) {
-      const count = await scrapeAndProcess(
-        archive.name,
-        archive.archiveUrl,
-        archive.category
-      );
-      totalBytes += count;
+    // Update website if not set
+    if (!source.website) {
+      await prisma.newsletterSource.update({
+        where: { id: source.id },
+        data: { website: config.website },
+      });
+    }
+    console.log(`[${config.name}] Using existing newsletter source`);
+  }
 
-      // Small delay to respect rate limits (10 RPM = 1 per 6 seconds)
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+  // Save editions to processing queue
+  let saved = 0;
+  let skipped = 0;
+
+  for (const edition of editions) {
+    const contentHash = generateContentHash(edition.url + edition.content.substring(0, 500));
+
+    // Check if already exists
+    const existing = await prisma.edition.findUnique({
+      where: { contentHash },
+    });
+
+    if (existing) {
+      skipped++;
+      continue;
     }
 
-    console.log('\n' + '='.repeat(50));
-    console.log(`✅ Scraping complete! Total bytes added: ${totalBytes}`);
+    try {
+      await prisma.edition.create({
+        data: {
+          sourceId: source.id,
+          subject: edition.subject,
+          contentHash,
+          rawContent: edition.htmlContent || edition.content,
+          textContent: edition.content,
+          publishedAt: edition.publishedAt,
+          receivedAt: new Date(),
+          processingStatus: 'pending', // Queue for processing
+        },
+      });
+      saved++;
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Unique constraint')) {
+        skipped++;
+      } else {
+        console.error(`[${config.name}] Error saving edition:`, error);
+      }
+    }
   }
 
-  // Show database stats
-  const totalBytes = await prisma.contentByte.count();
-  const totalSources = await prisma.newsletterSource.count();
-  console.log(`\n📊 Database stats:`);
-  console.log(`   Total bytes: ${totalBytes}`);
-  console.log(`   Total sources: ${totalSources}`);
+  console.log(`[${config.name}] Saved ${saved} editions, skipped ${skipped} duplicates`);
+  return { saved, skipped };
 }
 
-main()
-  .catch(console.error)
-  .finally(() => prisma.$disconnect());
+// =============================================================================
+// MAIN FUNCTION
+// =============================================================================
+
+async function main() {
+  console.log('='.repeat(60));
+  console.log('  Newsletter Scraper - ByteLetters');
+  console.log('='.repeat(60));
+
+  // Check which newsletters to scrape (can pass as args)
+  const args = process.argv.slice(2).filter(a => !a.startsWith('-'));
+
+  let newslettersToScrape: NewsletterConfig[];
+
+  if (args.length > 0) {
+    newslettersToScrape = NEWSLETTERS.filter(n =>
+      args.some(a => n.name.toLowerCase().includes(a.toLowerCase()))
+    );
+
+    if (newslettersToScrape.length === 0) {
+      console.log('\nNo matching newsletters found.');
+      console.log('Available newsletters:');
+      NEWSLETTERS.forEach(n => console.log(`  - ${n.name}`));
+      console.log('\nUsage: npm run scrape -- [newsletter_name]');
+      process.exit(1);
+    }
+  } else {
+    newslettersToScrape = NEWSLETTERS;
+  }
+
+  console.log(`\nScraping ${newslettersToScrape.length} newsletter(s):`);
+  newslettersToScrape.forEach(n => console.log(`  - ${n.name} (${n.archiveUrl})`));
+
+  let totalSaved = 0;
+  let totalSkipped = 0;
+
+  for (const config of newslettersToScrape) {
+    try {
+      const editions = await config.scraper(config);
+      const { saved, skipped } = await saveEditions(config, editions);
+      totalSaved += saved;
+      totalSkipped += skipped;
+    } catch (error) {
+      console.error(`\n[${config.name}] Error:`, error);
+    }
+  }
+
+  // Print queue stats
+  console.log('\n' + '='.repeat(60));
+  console.log('  Summary');
+  console.log('='.repeat(60));
+  console.log(`  New editions added: ${totalSaved}`);
+  console.log(`  Duplicates skipped: ${totalSkipped}`);
+
+  const stats = await prisma.edition.groupBy({
+    by: ['processingStatus'],
+    _count: { id: true },
+  });
+
+  console.log('\n  Processing Queue:');
+  stats.forEach(s => console.log(`    ${s.processingStatus}: ${s._count.id}`));
+
+  const sources = await prisma.newsletterSource.findMany({
+    select: { name: true, _count: { select: { editions: true } } },
+  });
+
+  console.log('\n  Editions by Source:');
+  sources.forEach(s => console.log(`    ${s.name}: ${s._count.editions}`));
+
+  console.log('\n' + '='.repeat(60));
+  console.log('  To process the queue, run: npm run dev');
+  console.log('  Then call: POST /queue/process');
+  console.log('='.repeat(60));
+
+  await prisma.$disconnect();
+}
+
+main().catch(console.error);

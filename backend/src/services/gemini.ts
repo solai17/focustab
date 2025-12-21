@@ -40,7 +40,7 @@ const BYTE_EXTRACTION_PROMPT = `You are a master curator extracting transformati
 Extract 3-7 "bytes" - bite-sized pieces of wisdom that make someone stop and think.
 
 BYTE TYPES (pick the most fitting):
-- quote: A memorable statement worth remembering (requires author)
+- quote: A memorable statement worth remembering (requires KNOWN author like "Marcus Aurelius", "Warren Buffett")
 - insight: A non-obvious truth that shifts perspective
 - statistic: A number that changes how you see something
 - action: A specific thing you can do TODAY
@@ -54,13 +54,20 @@ REQUIREMENTS:
 - Focus on timeless wisdom, not dated news/facts
 - Quality over quantity - only extract truly valuable insights
 
+AUTHOR ATTRIBUTION RULES (VERY IMPORTANT):
+- For direct quotes from KNOWN people (authors, philosophers, business leaders), use their full name
+- NEVER use vague terms as author: "somebody", "someone", "a friend", "my mentor", "a wise person", etc.
+- If the original author is unknown or vague, set author to null
+- For the newsletter author's own insights, set author to null (not the newsletter name)
+- When in doubt, use null - we will attribute to the newsletter source automatically
+
 Return ONLY valid JSON (no markdown, no code blocks):
 {
   "bytes": [
     {
       "content": "The actual insight text...",
       "type": "insight",
-      "author": "Author Name or null",
+      "author": "Full Name of Known Person or null",
       "context": "Brief context (2-4 words)",
       "category": "wisdom|productivity|business|tech|life|creativity|leadership|finance|health|general",
       "qualityScore": 0.85
@@ -77,7 +84,7 @@ const BYTE_EXTRACTION_WITH_SOURCE_INFO_PROMPT = `You are a master curator extrac
 TASK 1: Extract 3-7 "bytes" - bite-sized pieces of wisdom that make someone stop and think.
 
 BYTE TYPES:
-- quote: A memorable statement worth remembering (requires author)
+- quote: A memorable statement worth remembering (requires KNOWN author like "Marcus Aurelius", "Warren Buffett")
 - insight: A non-obvious truth that shifts perspective
 - statistic: A number that changes how you see something
 - action: A specific thing you can do TODAY
@@ -90,6 +97,13 @@ BYTE REQUIREMENTS:
 - Must be self-contained (understandable without the full newsletter)
 - Focus on timeless wisdom, not dated news/facts
 - Quality over quantity - only extract truly valuable insights
+
+AUTHOR ATTRIBUTION RULES (VERY IMPORTANT):
+- For direct quotes from KNOWN people (authors, philosophers, business leaders), use their full name
+- NEVER use vague terms as author: "somebody", "someone", "a friend", "my mentor", "a wise person", etc.
+- If the original author is unknown or vague, set author to null
+- For the newsletter author's own insights, set author to null (not the newsletter name)
+- When in doubt, use null - we will attribute to the newsletter source automatically
 
 TASK 2: Identify the newsletter source information.
 
@@ -113,7 +127,7 @@ Return ONLY valid JSON (no markdown, no code blocks):
     {
       "content": "The actual insight text...",
       "type": "insight",
-      "author": "Author Name or null",
+      "author": "Full Name of Known Person or null",
       "context": "Brief context (2-4 words)",
       "category": "wisdom|productivity|business|tech|life|creativity|leadership|finance|health|general",
       "qualityScore": 0.85
