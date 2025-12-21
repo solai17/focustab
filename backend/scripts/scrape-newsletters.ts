@@ -279,13 +279,19 @@ async function scrapeJamesClear(config: NewsletterConfig): Promise<EditionData[]
     // Remove unwanted elements
     page$('nav, header, footer, .sidebar, .related-posts, .comments, script, style').remove();
 
-    // Extract article content
-    const articleHtml = page$('article').html() ||
-                        page$('.post-content').html() ||
-                        page$('.entry-content').html() ||
-                        page$('main').html() || '';
+    // Try multiple selectors for content extraction (more robust)
+    let articleHtml = '';
+    let articleText = '';
+    const selectors = ['article', '.post-content', '.entry-content', 'main', '.content', '#content', '.post', 'body'];
 
-    const articleText = extractText(articleHtml);
+    for (const sel of selectors) {
+      const content = page$(sel).html();
+      if (content && content.length > 500) {
+        articleHtml = content;
+        articleText = page$(sel).text().replace(/\s+/g, ' ').trim();
+        break;
+      }
+    }
 
     if (articleText.length > 200) {
       // Extract date
@@ -308,6 +314,8 @@ async function scrapeJamesClear(config: NewsletterConfig): Promise<EditionData[]
         htmlContent: articleHtml,
         publishedAt,
       });
+    } else {
+      console.log(`  [${config.name}] Skipped (content too short: ${articleText.length} chars)`);
     }
   }
 
@@ -447,11 +455,11 @@ async function scrapeSahilBloom(config: NewsletterConfig): Promise<EditionData[]
       const maxScrolls = 20; // Limit scrolling
 
       while (scrollAttempts < maxScrolls) {
-        const currentHeight = await page.evaluate(() => document.body.scrollHeight);
+        const currentHeight = await page.evaluate('document.body.scrollHeight') as number;
         if (currentHeight === previousHeight) break;
 
         previousHeight = currentHeight;
-        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+        await page.evaluate('window.scrollTo(0, document.body.scrollHeight)');
         await sleep(2000);
         scrollAttempts++;
         console.log(`  [${config.name}] Scrolled ${scrollAttempts} times, height: ${currentHeight}`);
@@ -771,12 +779,18 @@ async function saveEditions(config: NewsletterConfig, editions: EditionData[]) {
     });
 
     if (existing) {
+      // Only log first few skipped to avoid spam
+      if (skipped < 3) {
+        console.log(`  [${config.name}] Skipped duplicate: ${edition.subject.substring(0, 50)}...`);
+      } else if (skipped === 3) {
+        console.log(`  [${config.name}] (suppressing further duplicate logs...)`);
+      }
       skipped++;
       continue;
     }
 
     try {
-      await prisma.edition.create({
+      const created = await prisma.edition.create({
         data: {
           sourceId: source.id,
           subject: edition.subject,
@@ -789,6 +803,10 @@ async function saveEditions(config: NewsletterConfig, editions: EditionData[]) {
         },
       });
       saved++;
+      // Log every 10th save or first 3
+      if (saved <= 3 || saved % 10 === 0) {
+        console.log(`  [${config.name}] ✓ Saved #${saved}: ${edition.subject.substring(0, 50)}...`);
+      }
     } catch (error) {
       if (error instanceof Error && error.message.includes('Unique constraint')) {
         skipped++;
