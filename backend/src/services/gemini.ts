@@ -32,6 +32,7 @@ export interface NewsletterInfo {
 export interface ExtractionResult {
   bytes: ExtractedByte[];
   newsletterInfo?: NewsletterInfo;
+  modelUsed?: string; // Track which model processed this
 }
 
 // Base prompt for byte extraction only
@@ -162,8 +163,8 @@ export async function extractBytesWithGemini(
   }
 
   try {
-    // Use Gemini 3 Flash for best quality (outperforms 2.5 Pro!)
-    const model = process.env.GEMINI_MODEL || 'gemini-3-flash';
+    // Use Gemini 3 Flash Preview for best quality (free tier available)
+    const model = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
 
     // Use extended prompt if we need to extract source info
     const prompt = extractSourceInfo
@@ -215,10 +216,10 @@ export async function extractBytesWithGemini(
         qualityScore: Math.min(1, Math.max(0, byte.qualityScore || 0.7)),
       }));
 
-    console.log(`[Gemini] Extracted ${validBytes.length} bytes from ${newsletterSource}`);
+    console.log(`[Gemini] Extracted ${validBytes.length} bytes from ${newsletterSource} using ${model}`);
 
-    // Build result
-    const result: ExtractionResult = { bytes: validBytes };
+    // Build result with model tracking
+    const result: ExtractionResult = { bytes: validBytes, modelUsed: model };
 
     // Add newsletter info if extracted
     if (extractSourceInfo && parsed.newsletterInfo) {
