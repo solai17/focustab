@@ -23,7 +23,7 @@ import crypto from 'crypto';
 
 // Configuration
 const DELAY_BETWEEN_REQUESTS = 2000; // 2 seconds between requests
-const MAX_EDITIONS_PER_SOURCE = 150; // Limit for initial scrape
+const MAX_EDITIONS_PER_SOURCE = 1000; // High limit to get all editions (effectively no limit)
 
 interface NewsletterConfig {
   name: string;
