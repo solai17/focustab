@@ -1,8 +1,8 @@
 /**
  * Gemini AI Service for ByteLetters
  *
- * Uses Google Gemini Flash 2.0 for byte extraction
- * FREE tier: 1,500 requests/day, 10 RPM
+ * Uses Google Gemini 3 Flash for highest quality byte extraction
+ * FREE tier: 20 requests/day for gemini-3-flash-preview
  *
  * Setup:
  *   1. Get free API key: https://aistudio.google.com/apikey
@@ -10,10 +10,14 @@
  */
 
 import { GoogleGenAI } from '@google/genai';
+import { prisma } from './db';
 
 // Initialize Gemini client
 const apiKey = process.env.GEMINI_API_KEY;
 const gemini = apiKey ? new GoogleGenAI({ apiKey }) : null;
+
+// Daily request limit for Gemini 3 Flash
+const GEMINI_DAILY_LIMIT = parseInt(process.env.GEMINI_DAILY_LIMIT || '20', 10);
 
 export interface ExtractedByte {
   content: string;
@@ -33,6 +37,67 @@ export interface ExtractionResult {
   bytes: ExtractedByte[];
   newsletterInfo?: NewsletterInfo;
   modelUsed?: string; // Track which model processed this
+  quotaExceeded?: boolean; // True if daily quota was exceeded
+}
+
+// In-memory daily counter (resets on server restart)
+// For production, this should be stored in Redis or database
+let dailyRequestCount = 0;
+let lastResetDate = new Date().toDateString();
+
+/**
+ * Check and update daily request counter
+ * Returns true if we can make a request, false if quota exceeded
+ */
+function checkAndIncrementQuota(): boolean {
+  const today = new Date().toDateString();
+
+  // Reset counter if it's a new day
+  if (today !== lastResetDate) {
+    dailyRequestCount = 0;
+    lastResetDate = today;
+    console.log('[Gemini] Daily quota reset');
+  }
+
+  // Check if we're under the limit
+  if (dailyRequestCount >= GEMINI_DAILY_LIMIT) {
+    console.log(`[Gemini] Daily quota exceeded (${dailyRequestCount}/${GEMINI_DAILY_LIMIT})`);
+    return false;
+  }
+
+  // Increment counter
+  dailyRequestCount++;
+  console.log(`[Gemini] Request ${dailyRequestCount}/${GEMINI_DAILY_LIMIT} for today`);
+  return true;
+}
+
+/**
+ * Get current quota status
+ */
+export function getGeminiQuotaStatus(): { used: number; limit: number; remaining: number } {
+  const today = new Date().toDateString();
+  if (today !== lastResetDate) {
+    return { used: 0, limit: GEMINI_DAILY_LIMIT, remaining: GEMINI_DAILY_LIMIT };
+  }
+  return {
+    used: dailyRequestCount,
+    limit: GEMINI_DAILY_LIMIT,
+    remaining: Math.max(0, GEMINI_DAILY_LIMIT - dailyRequestCount),
+  };
+}
+
+/**
+ * Check if Gemini is available (has API key AND quota remaining)
+ */
+export function isGeminiAvailable(): boolean {
+  if (!gemini) return false;
+
+  const today = new Date().toDateString();
+  if (today !== lastResetDate) {
+    return true; // New day, quota reset
+  }
+
+  return dailyRequestCount < GEMINI_DAILY_LIMIT;
 }
 
 // Base prompt for byte extraction only
@@ -140,13 +205,6 @@ NEWSLETTER CONTENT:
 `;
 
 /**
- * Check if Gemini is available
- */
-export function isGeminiAvailable(): boolean {
-  return gemini !== null;
-}
-
-/**
  * Extract bytes from newsletter content using Gemini
  * @param content - The newsletter content
  * @param newsletterSource - The name of the newsletter source
@@ -159,13 +217,17 @@ export async function extractBytesWithGemini(
 ): Promise<ExtractionResult> {
   if (!gemini) {
     console.warn('[Gemini] API key not configured, skipping');
-    return { bytes: [] };
+    return { bytes: [], quotaExceeded: false };
+  }
+
+  // Check daily quota before making request
+  if (!checkAndIncrementQuota()) {
+    return { bytes: [], quotaExceeded: true, modelUsed: 'gemini-quota-exceeded' };
   }
 
   try {
-    // Use Gemini 2.0 Flash for higher rate limits (1500/day free tier)
-    // Note: gemini-3-flash-preview only allows 20 requests/day on free tier!
-    const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+    // Use Gemini 3 Flash Preview for highest quality
+    const model = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
 
     // Use extended prompt if we need to extract source info
     const prompt = extractSourceInfo
@@ -192,7 +254,7 @@ export async function extractBytesWithGemini(
     const objectMatch = jsonStr.match(/\{[\s\S]*\}/);
     if (!objectMatch) {
       console.error('[Gemini] Could not parse JSON from response');
-      return { bytes: [] };
+      return { bytes: [], modelUsed: model };
     }
 
     const parsed = JSON.parse(objectMatch[0]);
@@ -232,9 +294,17 @@ export async function extractBytesWithGemini(
     }
 
     return result;
-  } catch (error) {
+  } catch (error: any) {
+    // Check if it's a rate limit error
+    if (error?.status === 429 || error?.message?.includes('429') || error?.message?.includes('quota')) {
+      console.error('[Gemini] Rate limit hit, marking quota as exceeded');
+      // Set daily count to max to prevent further attempts today
+      dailyRequestCount = GEMINI_DAILY_LIMIT;
+      return { bytes: [], quotaExceeded: true, modelUsed: 'gemini-rate-limited' };
+    }
+
     console.error('[Gemini] Extraction error:', error);
-    return { bytes: [] };
+    return { bytes: [], modelUsed: 'gemini-error' };
   }
 }
 
@@ -245,13 +315,15 @@ export async function summarizeWithGemini(
   content: string,
   maxLength: number = 200
 ): Promise<string | null> {
-  if (!gemini) {
+  if (!gemini || !isGeminiAvailable()) {
     return null;
   }
 
   try {
+    const model = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
+
     const response = await gemini.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model,
       contents: `Summarize this newsletter in ${maxLength} characters or less. Focus on the main insights and takeaways. Be concise but informative.\n\nContent:\n${content.substring(0, 10000)}`,
     });
 
