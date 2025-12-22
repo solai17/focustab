@@ -163,8 +163,9 @@ export async function extractBytesWithGemini(
   }
 
   try {
-    // Use Gemini 3 Flash Preview for best quality (free tier available)
-    const model = process.env.GEMINI_MODEL || 'gemini-3-flash-preview';
+    // Use Gemini 2.0 Flash for higher rate limits (1500/day free tier)
+    // Note: gemini-3-flash-preview only allows 20 requests/day on free tier!
+    const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 
     // Use extended prompt if we need to extract source info
     const prompt = extractSourceInfo

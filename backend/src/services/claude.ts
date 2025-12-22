@@ -144,8 +144,22 @@ ${truncatedContent}`,
     const responseText =
       message.content[0].type === 'text' ? message.content[0].text : '';
 
-    // Parse JSON response
-    const parsed = JSON.parse(responseText);
+    // Parse JSON response - handle markdown code blocks
+    let jsonStr = responseText;
+
+    // Remove markdown code blocks if present (```json ... ```)
+    const codeBlockMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      jsonStr = codeBlockMatch[1];
+    }
+
+    // Find JSON object
+    const objectMatch = jsonStr.match(/\{[\s\S]*\}/);
+    if (!objectMatch) {
+      throw new Error('Could not find JSON object in Claude response');
+    }
+
+    const parsed = JSON.parse(objectMatch[0]);
 
     // Validate and clean up bytes
     // Length: min 30 chars, max 500 chars (~100 words, readable in 20-30 seconds)
