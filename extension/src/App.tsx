@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Settings as SettingsIcon, Bookmark, Copy, Check } from 'lucide-react';
+// Use the new logo from public folder
+const ByteLettersLogo = '/icons/icon128.png';
 import type { UserProfile, ContentByte, VoteValue } from './types';
 import {
   getUserProfile,
@@ -418,30 +420,39 @@ function App() {
       <div className="fixed inset-0 bg-gradient-to-br from-void via-void to-obsidian pointer-events-none" />
       <div className="fixed top-0 right-0 w-1/2 h-1/2 bg-gradient-radial from-life/5 to-transparent pointer-events-none" />
 
-      {/* Top buttons */}
-      <div className="fixed top-6 right-6 flex gap-2 z-50">
-        {/* Saved bytes button */}
-        <button
-          onClick={() => setShowSaved(true)}
-          className="p-3 rounded-xl bg-slate/50 border border-ash/50 hover:bg-ash transition-colors relative"
-          title="Saved bytes"
-        >
-          <Bookmark className="w-5 h-5 text-smoke" />
-          {savedBytes.length > 0 && (
-            <span className="absolute -top-1 -right-1 w-5 h-5 bg-life text-void text-xs font-medium rounded-full flex items-center justify-center">
-              {savedBytes.length}
-            </span>
-          )}
-        </button>
+      {/* Top Header */}
+      <div className="fixed top-0 left-0 right-0 flex justify-between items-center px-6 py-4 z-50">
+        {/* Brand Logo */}
+        <div className="flex items-center gap-2 opacity-70 hover:opacity-100 transition-opacity">
+          <img src={ByteLettersLogo} alt="ByteLetters" className="w-8 h-8" />
+          <span className="font-display text-lg text-pearl/80 hidden sm:block">ByteLetters</span>
+        </div>
 
-        {/* Settings button */}
-        <button
-          onClick={() => setShowSettings(true)}
-          className="p-3 rounded-xl bg-slate/50 border border-ash/50 hover:bg-ash transition-colors"
-          title="Settings"
-        >
-          <SettingsIcon className="w-5 h-5 text-smoke" />
-        </button>
+        {/* Right side buttons */}
+        <div className="flex gap-2">
+          {/* Saved bytes button */}
+          <button
+            onClick={() => setShowSaved(true)}
+            className="p-3 rounded-xl bg-slate/50 border border-ash/50 hover:bg-ash transition-colors relative"
+            title="Saved bytes"
+          >
+            <Bookmark className="w-5 h-5 text-smoke" />
+            {savedBytes.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-5 h-5 bg-life text-void text-xs font-medium rounded-full flex items-center justify-center">
+                {savedBytes.length}
+              </span>
+            )}
+          </button>
+
+          {/* Settings button */}
+          <button
+            onClick={() => setShowSettings(true)}
+            className="p-3 rounded-xl bg-slate/50 border border-ash/50 hover:bg-ash transition-colors"
+            title="Settings"
+          >
+            <SettingsIcon className="w-5 h-5 text-smoke" />
+          </button>
+        </div>
       </div>
 
       {/* Main content */}
@@ -464,6 +475,7 @@ function App() {
               onNext={handleNext}
               onView={handleView}
               queueSize={queueSize}
+              isCommunityContent={showingCommunityBytes || usingMockData.current}
             />
           ) : (
             <div className="text-center py-16 bg-obsidian/80 backdrop-blur-sm rounded-2xl p-8 border border-ash/30">

@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ProcessedEdition, ExtractedByte, ByteType, ByteCategory } from '../types';
-import { extractBytesWithGemini, isGeminiAvailable, NewsletterInfo, ExtractionResult } from './gemini';
+import { extractBytesWithGemini, isGeminiAvailable, NewsletterInfo, ExtractionResult, getGeminiQuotaStatus } from './gemini';
+import { extractBytesWithDeepSeek, isDeepSeekAvailable } from './deepseek';
 
 // Extended result type that includes newsletter info and model tracking
 export interface ProcessedEditionWithSourceInfo extends ProcessedEdition {
@@ -12,8 +13,9 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// Use Gemini (FREE) as primary, Claude as fallback
+// Model priority: Gemini 3 Flash (best quality) → DeepSeek V3 (free) → Claude (paid)
 const USE_GEMINI_PRIMARY = process.env.USE_GEMINI_PRIMARY !== 'false';
+const USE_DEEPSEEK_FALLBACK = process.env.USE_DEEPSEEK_FALLBACK !== 'false';
 
 // =============================================================================
 // v2.0 CONTENT BYTE EXTRACTION
@@ -80,19 +82,33 @@ SCORING:
 
 Return ONLY valid JSON, no markdown or explanation.`;
 
+/**
+ * Process newsletter edition with multi-model fallback:
+ * 1. Gemini 3 Flash (highest quality, 20/day free)
+ * 2. DeepSeek V3 (high quality, 5M tokens free)
+ * 3. Claude Sonnet 4 (paid fallback)
+ */
 export async function processEditionWithClaude(
   subject: string,
   textContent: string,
   sourceName: string,
   extractSourceInfo: boolean = false
 ): Promise<ProcessedEditionWithSourceInfo> {
-  // Try Gemini first (FREE: 1,500 requests/day)
+  const quotaStatus = getGeminiQuotaStatus();
+  console.log(`[AI] Model selection - Gemini quota: ${quotaStatus.remaining}/${quotaStatus.limit} remaining`);
+
+  // =========================================================================
+  // STEP 1: Try Gemini 3 Flash (highest quality, 20 requests/day)
+  // =========================================================================
   if (USE_GEMINI_PRIMARY && isGeminiAvailable()) {
     try {
-      console.log(`[AI] Using Gemini (FREE) for: ${sourceName}${extractSourceInfo ? ' (with source info)' : ''}`);
+      console.log(`[AI] Using Gemini 3 Flash for: ${sourceName}${extractSourceInfo ? ' (with source info)' : ''}`);
       const geminiResult = await extractBytesWithGemini(textContent, sourceName, extractSourceInfo);
 
-      if (geminiResult.bytes.length > 0) {
+      // Check if quota was exceeded
+      if (geminiResult.quotaExceeded) {
+        console.log('[AI] Gemini daily quota exceeded, trying DeepSeek...');
+      } else if (geminiResult.bytes.length > 0) {
         const result: ProcessedEditionWithSourceInfo = {
           summary: `Processed ${geminiResult.bytes.length} insights from ${sourceName}`,
           readTimeMinutes: Math.ceil(textContent.split(/\s+/).length / 200),
@@ -101,26 +117,55 @@ export async function processEditionWithClaude(
             type: validateByteType(byte.type),
             category: validateByteCategory(byte.category),
           })),
-          modelUsed: geminiResult.modelUsed, // Track which Gemini model was used
+          modelUsed: geminiResult.modelUsed,
         };
 
-        // Include newsletter info if extracted
         if (geminiResult.newsletterInfo) {
           result.newsletterInfo = geminiResult.newsletterInfo;
         }
 
         return result;
+      } else {
+        console.log('[AI] Gemini returned no bytes, trying DeepSeek...');
       }
-      console.log('[AI] Gemini returned no bytes, falling back to Claude');
     } catch (error) {
-      console.error('[AI] Gemini failed, falling back to Claude:', error);
+      console.error('[AI] Gemini failed:', error);
     }
   }
 
-  // Fallback to Claude (paid)
+  // =========================================================================
+  // STEP 2: Try DeepSeek V3 (high quality, 5M tokens free, no rate limit)
+  // =========================================================================
+  if (USE_DEEPSEEK_FALLBACK && isDeepSeekAvailable()) {
+    try {
+      console.log(`[AI] Using DeepSeek V3 for: ${sourceName}`);
+      const deepseekResult = await extractBytesWithDeepSeek(textContent, sourceName);
+
+      if (deepseekResult.bytes.length > 0) {
+        const result: ProcessedEditionWithSourceInfo = {
+          summary: `Processed ${deepseekResult.bytes.length} insights from ${sourceName}`,
+          readTimeMinutes: Math.ceil(textContent.split(/\s+/).length / 200),
+          bytes: deepseekResult.bytes.map((byte) => ({
+            ...byte,
+            type: validateByteType(byte.type),
+            category: validateByteCategory(byte.category),
+          })),
+          modelUsed: deepseekResult.modelUsed,
+        };
+
+        return result;
+      }
+      console.log('[AI] DeepSeek returned no bytes, falling back to Claude...');
+    } catch (error) {
+      console.error('[AI] DeepSeek failed:', error);
+    }
+  }
+
+  // =========================================================================
+  // STEP 3: Fallback to Claude Sonnet 4 (paid)
+  // =========================================================================
   try {
-    console.log(`[AI] Using Claude (paid) for: ${sourceName}`);
-    // Truncate content if too long
+    console.log(`[AI] Using Claude Sonnet 4 (paid) for: ${sourceName}`);
     const truncatedContent = textContent.slice(0, 20000);
 
     const message = await anthropic.messages.create({
@@ -140,19 +185,27 @@ ${truncatedContent}`,
       ],
     });
 
-    // Extract text content from response
     const responseText =
       message.content[0].type === 'text' ? message.content[0].text : '';
 
-    // Parse JSON response
-    const parsed = JSON.parse(responseText);
+    // Parse JSON response - handle markdown code blocks
+    let jsonStr = responseText;
 
-    // Validate and clean up bytes
-    // Length: min 30 chars, max 500 chars (~100 words, readable in 20-30 seconds)
+    const codeBlockMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      jsonStr = codeBlockMatch[1];
+    }
+
+    const objectMatch = jsonStr.match(/\{[\s\S]*\}/);
+    if (!objectMatch) {
+      throw new Error('Could not find JSON object in Claude response');
+    }
+
+    const parsed = JSON.parse(objectMatch[0]);
+
     const validBytes: ExtractedByte[] = (parsed.bytes || [])
       .filter((byte: any) => {
         const len = byte.content?.length || 0;
-        // Must have content (30-500 chars) and meet quality threshold (0.65+)
         return byte.content && len >= 30 && len <= 500 && (byte.qualityScore || 0.65) >= 0.65;
       })
       .map((byte: any) => ({
@@ -169,12 +222,11 @@ ${truncatedContent}`,
       readTimeMinutes:
         parsed.readTimeMinutes || Math.ceil(textContent.split(/\s+/).length / 200),
       bytes: validBytes,
-      modelUsed: 'claude-sonnet-4', // Track Claude model
+      modelUsed: 'claude-sonnet-4',
     };
   } catch (error) {
     console.error('Error processing edition with Claude:', error);
-    // Throw error so the queue knows processing failed
-    throw new Error(`Failed to process with both Gemini and Claude: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(`Failed to process with all models (Gemini, DeepSeek, Claude): ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 

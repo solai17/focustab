@@ -5,6 +5,7 @@ import { prisma } from '../services/db';
 import { categorizeNewsletterSource } from '../services/claude';
 import { verifyMailgunSignature, htmlToText, extractSenderName } from '../services/utils';
 import { MailgunWebhookPayload } from '../types';
+import { classifyEmail, shouldProcessEmail } from '../services/emailClassifier';
 
 const router = Router();
 const upload = multer();
@@ -55,6 +56,37 @@ router.post('/cloudflare', async (req: Request, res: Response) => {
     const finalTextContent = textContent || htmlToText(htmlContent || '');
 
     console.log(`[Cloudflare] Email from ${senderEmail} to ${recipientEmail}`);
+
+    // Quick junk email check
+    const quickCheck = shouldProcessEmail(finalSubject, senderEmail, finalTextContent.length);
+    if (!quickCheck.process) {
+      console.log(`[Cloudflare] Rejected email: ${quickCheck.reason}`);
+      res.status(200).json({ message: `Email rejected: ${quickCheck.reason}`, rejected: true });
+      return;
+    }
+
+    // Full classification for borderline cases
+    const classification = classifyEmail(
+      finalSubject,
+      senderEmail,
+      finalSenderName,
+      finalTextContent,
+      htmlContent || ''
+    );
+
+    if (classification.isJunk && classification.confidence > 0.7) {
+      console.log(`[Cloudflare] Classified as junk (${classification.category}): ${classification.reason}`);
+      res.status(200).json({
+        message: `Email rejected: ${classification.category}`,
+        reason: classification.reason,
+        rejected: true,
+      });
+      return;
+    }
+
+    if (classification.category === 'unknown' && classification.confidence < 0.5) {
+      console.log(`[Cloudflare] Low confidence classification, will process with caution`);
+    }
 
     // Find user by inbox email
     const user = await prisma.user.findUnique({
@@ -170,6 +202,26 @@ router.post('/mailgun', upload.none(), async (req: Request, res: Response) => {
     const senderEmail = payload.sender.toLowerCase();
     const senderName = extractSenderName(payload.from);
     const subject = payload.subject || 'No Subject';
+
+    // Quick junk email check
+    const quickCheck = shouldProcessEmail(subject, senderEmail, textContent.length);
+    if (!quickCheck.process) {
+      console.log(`[Mailgun] Rejected email: ${quickCheck.reason}`);
+      res.status(200).json({ message: `Email rejected: ${quickCheck.reason}`, rejected: true });
+      return;
+    }
+
+    // Full classification for borderline cases
+    const classification = classifyEmail(subject, senderEmail, senderName, textContent, htmlContent);
+    if (classification.isJunk && classification.confidence > 0.7) {
+      console.log(`[Mailgun] Classified as junk (${classification.category}): ${classification.reason}`);
+      res.status(200).json({
+        message: `Email rejected: ${classification.category}`,
+        reason: classification.reason,
+        rejected: true,
+      });
+      return;
+    }
 
     // Generate content hash for deduplication
     const contentHash = generateContentHash(subject, textContent);

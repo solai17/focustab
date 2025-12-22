@@ -19,6 +19,7 @@ interface ByteCardProps {
   onNext: () => void;
   onView: (byteId: string, dwellTimeMs: number) => void;
   queueSize: number;
+  isCommunityContent?: boolean;
 }
 
 export function ByteCard({
@@ -29,6 +30,7 @@ export function ByteCard({
   onNext,
   onView,
   queueSize,
+  isCommunityContent = false,
 }: ByteCardProps) {
   const [localVote, setLocalVote] = useState<VoteValue>(0);
   const [localSaved, setLocalSaved] = useState(false);
@@ -118,11 +120,11 @@ export function ByteCard({
               href={byte.source.website || `https://www.google.com/search?q=${encodeURIComponent(byte.source.name + ' newsletter subscribe')}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1 hover:text-life transition-colors group"
-              title={byte.source.website ? `Subscribe to ${byte.source.name}` : `Find ${byte.source.name} newsletter`}
+              className="flex items-center gap-1 text-life/80 hover:text-life transition-colors group underline underline-offset-2 decoration-life/30 hover:decoration-life/60"
+              title={byte.source.website ? `Read more from ${byte.source.name}` : `Find ${byte.source.name} newsletter`}
             >
               <span>{byte.source.name}</span>
-              <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <ExternalLink className="w-3 h-3 opacity-60 group-hover:opacity-100 transition-opacity" />
             </a>
             {byte.isSponsored && (
               <span className="px-2 py-0.5 bg-amber-500/10 text-amber-400 text-xs rounded">
@@ -216,13 +218,25 @@ export function ByteCard({
         </div>
       </div>
 
-      {/* Queue Indicator */}
-      {queueSize > 0 && (
-        <div className="flex items-center justify-center mt-4 gap-2 text-smoke text-sm">
-          <Sparkles className="w-4 h-4" />
-          <span>{queueSize} more bytes waiting</span>
-        </div>
-      )}
+      {/* Queue Indicator / Community Content CTA */}
+      <div className="flex items-center justify-center mt-4 gap-2 text-smoke text-sm">
+        {isCommunityContent ? (
+          <div className="text-center px-4">
+            <div className="flex items-center justify-center gap-2 mb-1">
+              <Sparkles className="w-4 h-4 text-life/70" />
+              <span className="text-pearl/80">Enjoying these insights?</span>
+            </div>
+            <p className="text-smoke/70 text-xs">
+              Forward your favorite newsletters to get personalized wisdom
+            </p>
+          </div>
+        ) : queueSize > 0 ? (
+          <>
+            <Sparkles className="w-4 h-4" />
+            <span>{queueSize} more bytes waiting</span>
+          </>
+        ) : null}
+      </div>
 
       {/* Share Toast */}
       {showShareToast && (
