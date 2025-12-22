@@ -14,6 +14,8 @@ import {
   getChromeIdentity,
   authenticateWithGoogle,
   clearAuth,
+  updateProfile,
+  getStoredAuth,
   type AuthUser,
 } from './services/auth';
 import {
@@ -55,6 +57,9 @@ function App() {
   const [showingCommunityBytes, setShowingCommunityBytes] = useState(false);
   const [communityBytes, setCommunityBytes] = useState<ContentByte[]>([]);
   const [communityByteIndex, setCommunityByteIndex] = useState(0);
+  // Track content source info from API
+  const [isCommunityContent, setIsCommunityContent] = useState(true);
+  const [_hasUserSubscriptions, setHasUserSubscriptions] = useState(false);
   // Track if using mock data (offline fallback)
   const usingMockData = useRef(false);
 
@@ -99,7 +104,13 @@ function App() {
   };
 
   // Helper to load byte and saved bytes from API
-  async function loadFromApi(): Promise<{ byte: ContentByte | null; queueSize: number; saved: ContentByte[] }> {
+  async function loadFromApi(): Promise<{
+    byte: ContentByte | null;
+    queueSize: number;
+    saved: ContentByte[];
+    hasUserSubscriptions: boolean;
+    isCommunityContent: boolean;
+  }> {
     try {
       const [nextByteResult, savedResult] = await Promise.all([
         fetchNextByte(),
@@ -110,6 +121,8 @@ function App() {
         byte: nextByteResult.byte,
         queueSize: nextByteResult.queueSize,
         saved: savedResult,
+        hasUserSubscriptions: nextByteResult.hasUserSubscriptions,
+        isCommunityContent: nextByteResult.isCommunityContent,
       };
     } catch (error) {
       console.log('API fetch failed, falling back to mock data:', error);
@@ -118,6 +131,8 @@ function App() {
         byte: getNextMockByte(),
         queueSize: SAMPLE_BYTES.length,
         saved: [],
+        hasUserSubscriptions: false,
+        isCommunityContent: true,
       };
     }
   }
@@ -136,10 +151,12 @@ function App() {
           setProfile(userProfile);
 
           // Load bytes and saved bytes from API
-          const { byte, queueSize: size, saved } = await loadFromApi();
-          setCurrentByte(byte);
-          setQueueSize(size);
-          setSavedBytes(saved);
+          const result = await loadFromApi();
+          setCurrentByte(result.byte);
+          setQueueSize(result.queueSize);
+          setSavedBytes(result.saved);
+          setHasUserSubscriptions(result.hasUserSubscriptions);
+          setIsCommunityContent(result.isCommunityContent);
           return;
         }
 
@@ -160,10 +177,12 @@ function App() {
               setProfile(userProfile);
 
               // Load bytes and saved bytes from API
-              const { byte, queueSize: size, saved } = await loadFromApi();
-              setCurrentByte(byte);
-              setQueueSize(size);
-              setSavedBytes(saved);
+              const result = await loadFromApi();
+              setCurrentByte(result.byte);
+              setQueueSize(result.queueSize);
+              setSavedBytes(result.saved);
+              setHasUserSubscriptions(result.hasUserSubscriptions);
+              setIsCommunityContent(result.isCommunityContent);
               return;
             }
             // New user or incomplete onboarding - show onboarding
@@ -199,10 +218,12 @@ function App() {
     setProfile(newProfile);
 
     // Try to load from API, fallback to mock
-    const { byte, queueSize: size, saved } = await loadFromApi();
-    setCurrentByte(byte);
-    setQueueSize(size);
-    setSavedBytes(saved);
+    const result = await loadFromApi();
+    setCurrentByte(result.byte);
+    setQueueSize(result.queueSize);
+    setSavedBytes(result.saved);
+    setHasUserSubscriptions(result.hasUserSubscriptions);
+    setIsCommunityContent(result.isCommunityContent);
   };
 
   // Handle vote
@@ -317,6 +338,7 @@ function App() {
       setCommunityByteIndex(nextIndex);
       setCurrentByte(communityBytes[nextIndex]);
       setQueueSize(communityBytes.length - nextIndex - 1);
+      setIsCommunityContent(true);
       return;
     }
 
@@ -325,19 +347,23 @@ function App() {
       const byte = getNextMockByte();
       setCurrentByte(byte);
       setQueueSize(prev => Math.max(0, prev - 1));
+      setIsCommunityContent(true);
     } else {
       // Fetch from API
       try {
-        const { byte, queueSize: size } = await fetchNextByte();
-        if (byte) {
-          setCurrentByte(byte);
-          setQueueSize(size);
+        const result = await fetchNextByte();
+        if (result.byte) {
+          setCurrentByte(result.byte);
+          setQueueSize(result.queueSize);
+          setIsCommunityContent(result.isCommunityContent);
+          setHasUserSubscriptions(result.hasUserSubscriptions);
         } else {
           // No more bytes from API, fall back to mock
           usingMockData.current = true;
           const mockByte = getNextMockByte();
           setCurrentByte(mockByte);
           setQueueSize(SAMPLE_BYTES.length);
+          setIsCommunityContent(true);
         }
       } catch (error) {
         console.error('Failed to fetch next byte:', error);
@@ -346,14 +372,40 @@ function App() {
         const byte = getNextMockByte();
         setCurrentByte(byte);
         setQueueSize(SAMPLE_BYTES.length);
+        setIsCommunityContent(true);
       }
     }
   }, [showingCommunityBytes, communityBytes, communityByteIndex]);
 
   // Update profile
   const handleUpdateProfile = async (updatedProfile: UserProfile) => {
+    // Save locally first
     await saveUserProfile(updatedProfile);
     setProfile(updatedProfile);
+
+    // Sync with backend API
+    if (!usingMockData.current) {
+      try {
+        const auth = await getStoredAuth();
+        if (auth?.token) {
+          await updateProfile(auth.token, {
+            name: updatedProfile.name,
+            birthDate: updatedProfile.birthDate,
+            lifeExpectancy: updatedProfile.lifeExpectancy,
+            enableRecommendations: updatedProfile.enableRecommendations,
+          });
+
+          // Reload feed after enableRecommendations change
+          const result = await loadFromApi();
+          setCurrentByte(result.byte);
+          setQueueSize(result.queueSize);
+          setHasUserSubscriptions(result.hasUserSubscriptions);
+          setIsCommunityContent(result.isCommunityContent);
+        }
+      } catch (error) {
+        console.error('Failed to sync profile to backend:', error);
+      }
+    }
   };
 
   // Reset all data
@@ -475,26 +527,51 @@ function App() {
               onNext={handleNext}
               onView={handleView}
               queueSize={queueSize}
-              isCommunityContent={showingCommunityBytes || usingMockData.current}
+              isCommunityContent={isCommunityContent || showingCommunityBytes || usingMockData.current}
+              inboxEmail={profile.inboxEmail}
             />
           ) : (
             <div className="text-center py-16 bg-obsidian/80 backdrop-blur-sm rounded-2xl p-8 border border-ash/30">
               <p className="text-pearl text-lg mb-2">Your feed is empty</p>
-              <p className="text-smoke/60 text-sm mb-6">
-                Forward newsletters to your inbox to start receiving personalized bytes.
+              <p className="text-smoke/60 text-sm mb-4">
+                Forward your favorite newsletters to start receiving personalized bytes.
               </p>
 
-              <div className="border-t border-ash/30 pt-6">
-                <p className="text-smoke text-sm mb-4">
-                  Or explore wisdom from the community
-                </p>
-                <button
-                  onClick={loadCommunityBytes}
-                  className="px-6 py-3 bg-life/20 hover:bg-life/30 text-life rounded-lg transition-colors font-medium"
-                >
-                  Show Community Bytes
-                </button>
-              </div>
+              {profile.inboxEmail && (
+                <div className="mb-6 p-3 bg-slate/50 rounded-lg border border-ash/30">
+                  <p className="text-smoke/70 text-xs mb-2">Forward newsletters to:</p>
+                  <code className="text-life text-sm select-all">{profile.inboxEmail}</code>
+                </div>
+              )}
+
+              {!profile.enableRecommendations ? (
+                <div className="border-t border-ash/30 pt-6">
+                  <p className="text-smoke/70 text-sm mb-4">
+                    Community picks are turned off.
+                  </p>
+                  <button
+                    onClick={() => {
+                      const updatedProfile = { ...profile, enableRecommendations: true };
+                      handleUpdateProfile(updatedProfile);
+                    }}
+                    className="px-6 py-3 bg-life/20 hover:bg-life/30 text-life rounded-lg transition-colors font-medium"
+                  >
+                    Turn on community picks
+                  </button>
+                </div>
+              ) : (
+                <div className="border-t border-ash/30 pt-6">
+                  <p className="text-smoke text-sm mb-4">
+                    Or explore wisdom from the community
+                  </p>
+                  <button
+                    onClick={loadCommunityBytes}
+                    className="px-6 py-3 bg-life/20 hover:bg-life/30 text-life rounded-lg transition-colors font-medium"
+                  >
+                    Show Community Bytes
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -532,99 +609,107 @@ function App() {
         />
       )}
 
-      {/* Saved Bytes Modal */}
-      {showSaved && (
-        <div className="fixed inset-0 bg-void/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="w-full max-w-lg bg-obsidian border border-ash rounded-2xl shadow-2xl animate-slide-up max-h-[80vh] overflow-hidden flex flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-ash">
-              <div className="flex items-center gap-3">
-                <Bookmark className="w-5 h-5 text-life" />
-                <h2 className="font-display text-xl text-pearl">Saved Bytes</h2>
-                <span className="text-sm text-smoke">({savedBytes.length})</span>
-              </div>
-              <button
-                onClick={() => setShowSaved(false)}
-                className="p-2 rounded-lg hover:bg-ash transition-colors text-smoke"
-              >
-                ✕
-              </button>
-            </div>
+      {/* Saved Bytes Slide Panel */}
+      <div
+        className={`fixed top-0 right-0 h-full w-full max-w-md bg-obsidian border-l border-ash shadow-2xl z-50 transform transition-transform duration-300 ease-in-out ${
+          showSaved ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-6 border-b border-ash">
+          <div className="flex items-center gap-3">
+            <Bookmark className="w-5 h-5 text-life" />
+            <h2 className="font-display text-xl text-pearl">Saved Bytes</h2>
+            <span className="text-sm text-smoke">({savedBytes.length})</span>
+          </div>
+          <button
+            onClick={() => setShowSaved(false)}
+            className="p-2 rounded-lg hover:bg-ash transition-colors text-smoke"
+          >
+            ✕
+          </button>
+        </div>
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-4">
-              {savedBytes.length === 0 ? (
-                <div className="text-center py-12">
-                  <Bookmark className="w-12 h-12 text-ash mx-auto mb-4" />
-                  <p className="text-smoke">No saved bytes yet</p>
-                  <p className="text-smoke/50 text-sm mt-1">
-                    Tap the bookmark icon on any byte to save it here
+        {/* Content */}
+        <div className="h-[calc(100%-80px)] overflow-y-auto p-4">
+          {savedBytes.length === 0 ? (
+            <div className="text-center py-12">
+              <Bookmark className="w-12 h-12 text-ash mx-auto mb-4" />
+              <p className="text-smoke">No saved bytes yet</p>
+              <p className="text-smoke/50 text-sm mt-1">
+                Tap the bookmark icon on any byte to save it here
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {savedBytes.map((byte) => (
+                <div
+                  key={byte.id}
+                  className="p-4 bg-slate border border-ash rounded-xl hover:border-ash/80 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <span className="text-xs text-smoke/60 capitalize">{byte.type}</span>
+                    <span className="text-xs text-life">{byte.source.name}</span>
+                  </div>
+                  <p className="text-pearl text-sm leading-relaxed mb-2">
+                    "{byte.content}"
                   </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {savedBytes.map((byte) => (
-                    <div
-                      key={byte.id}
-                      className="p-4 bg-slate border border-ash rounded-xl hover:border-ash/80 transition-colors"
-                    >
-                      <div className="flex items-start justify-between gap-3 mb-2">
-                        <span className="text-xs text-smoke/60 capitalize">{byte.type}</span>
-                        <span className="text-xs text-life">{byte.source.name}</span>
-                      </div>
-                      <p className="text-pearl text-sm leading-relaxed mb-2">
-                        "{byte.content}"
-                      </p>
-                      {byte.author && (
-                        <p className="text-smoke/60 text-xs">— {byte.author}</p>
-                      )}
-                      <button
-                        onClick={async () => {
-                          // Optimistic update
-                          setSavedBytes(prev => prev.filter(b => b.id !== byte.id));
+                  {byte.author && (
+                    <p className="text-smoke/60 text-xs">— {byte.author}</p>
+                  )}
+                  <button
+                    onClick={async () => {
+                      // Optimistic update
+                      setSavedBytes(prev => prev.filter(b => b.id !== byte.id));
+                      if (currentByte?.id === byte.id) {
+                        setCurrentByte({
+                          ...currentByte,
+                          userEngagement: {
+                            ...currentByte.userEngagement,
+                            vote: currentByte.userEngagement?.vote || 0,
+                            isSaved: false,
+                          },
+                        });
+                      }
+
+                      // Call API to unsave (if online)
+                      if (!usingMockData.current) {
+                        try {
+                          await toggleSaveByte(byte.id);
+                        } catch (error) {
+                          console.error('Failed to unsave byte:', error);
+                          // Revert on failure
+                          setSavedBytes(prev => [byte, ...prev]);
                           if (currentByte?.id === byte.id) {
                             setCurrentByte({
                               ...currentByte,
                               userEngagement: {
                                 ...currentByte.userEngagement,
                                 vote: currentByte.userEngagement?.vote || 0,
-                                isSaved: false,
+                                isSaved: true,
                               },
                             });
                           }
-
-                          // Call API to unsave (if online)
-                          if (!usingMockData.current) {
-                            try {
-                              await toggleSaveByte(byte.id);
-                            } catch (error) {
-                              console.error('Failed to unsave byte:', error);
-                              // Revert on failure
-                              setSavedBytes(prev => [byte, ...prev]);
-                              if (currentByte?.id === byte.id) {
-                                setCurrentByte({
-                                  ...currentByte,
-                                  userEngagement: {
-                                    ...currentByte.userEngagement,
-                                    vote: currentByte.userEngagement?.vote || 0,
-                                    isSaved: true,
-                                  },
-                                });
-                              }
-                            }
-                          }
-                        }}
-                        className="mt-3 text-xs text-smoke/50 hover:text-rose transition-colors"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
+                        }
+                      }
+                    }}
+                    className="mt-3 text-xs text-smoke/50 hover:text-rose transition-colors"
+                  >
+                    Remove
+                  </button>
                 </div>
-              )}
+              ))}
             </div>
-          </div>
+          )}
         </div>
+      </div>
+
+      {/* Backdrop for slide panel */}
+      {showSaved && (
+        <div
+          className="fixed inset-0 bg-void/60 backdrop-blur-sm z-40 animate-fade-in"
+          onClick={() => setShowSaved(false)}
+        />
       )}
     </div>
   );

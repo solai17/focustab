@@ -20,6 +20,7 @@ interface ByteCardProps {
   onView: (byteId: string, dwellTimeMs: number) => void;
   queueSize: number;
   isCommunityContent?: boolean;
+  inboxEmail?: string;
 }
 
 export function ByteCard({
@@ -31,6 +32,7 @@ export function ByteCard({
   onView,
   queueSize,
   isCommunityContent = false,
+  inboxEmail,
 }: ByteCardProps) {
   const [localVote, setLocalVote] = useState<VoteValue>(0);
   const [localSaved, setLocalSaved] = useState(false);
@@ -221,14 +223,19 @@ export function ByteCard({
       {/* Queue Indicator / Community Content CTA */}
       <div className="flex items-center justify-center mt-4 gap-2 text-smoke text-sm">
         {isCommunityContent ? (
-          <div className="text-center px-4">
-            <div className="flex items-center justify-center gap-2 mb-1">
-              <Sparkles className="w-4 h-4 text-life/70" />
-              <span className="text-pearl/80">Enjoying these insights?</span>
+          <div className="text-center px-4 py-2 bg-slate/30 rounded-lg border border-ash/20">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <Sparkles className="w-4 h-4 text-life" />
+              <span className="text-pearl font-medium">Get your own personalized bytes</span>
             </div>
-            <p className="text-smoke/70 text-xs">
-              Forward your favorite newsletters to get personalized wisdom
+            <p className="text-smoke/80 text-xs mb-2">
+              Forward your favorite newsletters to:
             </p>
+            {inboxEmail && (
+              <code className="text-life text-xs bg-void/50 px-3 py-1 rounded-md select-all">
+                {inboxEmail}
+              </code>
+            )}
           </div>
         ) : queueSize > 0 ? (
           <>
