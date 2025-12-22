@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Settings as SettingsIcon, Bookmark, Copy, Check } from 'lucide-react';
-import ByteLettersLogo from './assets/byteletters-icon.svg';
+// Use the new logo from public folder
+const ByteLettersLogo = '/icons/icon128.png';
 import type { UserProfile, ContentByte, VoteValue } from './types';
 import {
   getUserProfile,
