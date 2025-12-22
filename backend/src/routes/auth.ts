@@ -41,9 +41,11 @@ router.post('/google', async (req: Request, res: Response) => {
       }
 
       // Update profile if new data provided
+      // Always update name if provided during onboarding (fixes email prefix issue)
       if (name || birthDate || lifeExpectancy !== undefined || enableRecommendations !== undefined) {
         const updateData: Record<string, unknown> = {};
-        if (name && !user.name) updateData.name = name;
+        // Always update name if provided - user's name takes precedence over email prefix
+        if (name) updateData.name = name;
         if (birthDate && !user.birthDate) updateData.birthDate = new Date(birthDate);
         if (lifeExpectancy !== undefined) updateData.lifeExpectancy = lifeExpectancy;
         if (enableRecommendations !== undefined) updateData.enableRecommendations = enableRecommendations;

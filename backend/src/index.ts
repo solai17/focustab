@@ -14,12 +14,15 @@ import discoverRoutes from './routes/discover';
 import testFeedRoutes from './routes/testFeed';
 import internalRoutes from './routes/internal';
 import { isMockDb } from './services/db';
+import { securityHeaders, validateRequest, rateLimits, requestLogger } from './middleware/security';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Security middleware
 app.use(helmet());
+app.use(securityHeaders);  // Additional security headers
+app.use(requestLogger);     // Log all requests
 
 // CORS configuration
 const allowedOrigins = [
@@ -52,6 +55,12 @@ app.use(cors({
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Global rate limiting and validation (excludes webhooks for email reception)
+app.use('/feed', rateLimits.feed);
+app.use('/discover', rateLimits.feed);
+app.use('/test-feed', rateLimits.general);
+app.use(validateRequest);  // Validate all requests for injection attacks
 
 // Health check
 app.get('/health', (req, res) => {
