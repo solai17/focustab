@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Settings as SettingsIcon, Bookmark, Copy, Check } from 'lucide-react';
+import { Settings as SettingsIcon, Bookmark, BookmarkCheck, Copy, Check, ChevronDown, ChevronRight } from 'lucide-react';
 // Use the new logo from public folder
 const ByteLettersLogo = '/icons/icon128.png';
 import type { UserProfile, ContentByte, VoteValue } from './types';
@@ -57,11 +57,94 @@ function App() {
   const [showingCommunityBytes, setShowingCommunityBytes] = useState(false);
   const [communityBytes, setCommunityBytes] = useState<ContentByte[]>([]);
   const [communityByteIndex, setCommunityByteIndex] = useState(0);
+  // Saved bytes panel state
+  const [groupByCategory, setGroupByCategory] = useState(false);
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   // Track content source info from API
   const [isCommunityContent, setIsCommunityContent] = useState(true);
   const [_hasUserSubscriptions, setHasUserSubscriptions] = useState(false);
   // Track if using mock data (offline fallback)
   const usingMockData = useRef(false);
+
+  // Format category for display (capitalize first letter)
+  const formatCategory = (category: string) => {
+    return category.charAt(0).toUpperCase() + category.slice(1);
+  };
+
+  // Get category color class
+  const getCategoryColor = (category: string) => {
+    const colors: Record<string, string> = {
+      wisdom: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+      productivity: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+      business: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+      tech: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
+      life: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
+      creativity: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+      leadership: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30',
+      finance: 'bg-green-500/20 text-green-300 border-green-500/30',
+      health: 'bg-red-500/20 text-red-300 border-red-500/30',
+      general: 'bg-slate-500/20 text-slate-300 border-slate-500/30',
+    };
+    return colors[category] || colors.general;
+  };
+
+  // Toggle category collapse
+  const toggleCategory = (category: string) => {
+    setCollapsedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
+  };
+
+  // Group bytes by category
+  const groupedSavedBytes = savedBytes.reduce((acc, byte) => {
+    const cat = byte.category || 'general';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(byte);
+    return acc;
+  }, {} as Record<string, ContentByte[]>);
+
+  // Handle unsave byte (reusable function)
+  const handleUnsaveByte = async (byte: ContentByte) => {
+    // Optimistic update
+    setSavedBytes(prev => prev.filter(b => b.id !== byte.id));
+    if (currentByte?.id === byte.id) {
+      setCurrentByte({
+        ...currentByte,
+        userEngagement: {
+          ...currentByte.userEngagement,
+          vote: currentByte.userEngagement?.vote || 0,
+          isSaved: false,
+        },
+      });
+    }
+
+    // Call API to unsave (if online)
+    if (!usingMockData.current) {
+      try {
+        await toggleSaveByte(byte.id);
+      } catch (error) {
+        console.error('Failed to unsave byte:', error);
+        // Revert on failure
+        setSavedBytes(prev => [byte, ...prev]);
+        if (currentByte?.id === byte.id) {
+          setCurrentByte({
+            ...currentByte,
+            userEngagement: {
+              ...currentByte.userEngagement,
+              vote: currentByte.userEngagement?.vote || 0,
+              isSaved: true,
+            },
+          });
+        }
+      }
+    }
+  };
 
   // Copy email to clipboard
   const copyEmailToClipboard = async () => {
@@ -630,8 +713,29 @@ function App() {
           </button>
         </div>
 
+        {/* Group by Category Toggle */}
+        {savedBytes.length > 0 && (
+          <div className="px-6 py-3 border-b border-ash/50">
+            <label className="flex items-center justify-between cursor-pointer group">
+              <span className="text-sm text-smoke group-hover:text-pearl transition-colors">
+                Group by Category
+              </span>
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={groupByCategory}
+                  onChange={(e) => setGroupByCategory(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate rounded-full peer peer-checked:bg-life/30 transition-colors"></div>
+                <div className="absolute left-1 top-1 w-4 h-4 bg-smoke rounded-full peer-checked:translate-x-5 peer-checked:bg-life transition-all"></div>
+              </div>
+            </label>
+          </div>
+        )}
+
         {/* Content */}
-        <div className="h-[calc(100%-80px)] overflow-y-auto p-4">
+        <div className={`overflow-y-auto p-4 ${savedBytes.length > 0 ? 'h-[calc(100%-128px)]' : 'h-[calc(100%-80px)]'}`}>
           {savedBytes.length === 0 ? (
             <div className="text-center py-12">
               <Bookmark className="w-12 h-12 text-ash mx-auto mb-4" />
@@ -640,7 +744,69 @@ function App() {
                 Tap the bookmark icon on any byte to save it here
               </p>
             </div>
+          ) : groupByCategory ? (
+            /* Grouped View */
+            <div className="space-y-4">
+              {Object.entries(groupedSavedBytes)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([category, bytes]) => (
+                  <div key={category} className="border border-ash/50 rounded-xl overflow-hidden">
+                    {/* Category Header */}
+                    <button
+                      onClick={() => toggleCategory(category)}
+                      className="w-full flex items-center justify-between p-4 bg-slate/50 hover:bg-slate/70 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        {collapsedCategories.has(category) ? (
+                          <ChevronRight className="w-4 h-4 text-smoke" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-smoke" />
+                        )}
+                        <span className={`px-2 py-1 text-xs rounded-md border ${getCategoryColor(category)}`}>
+                          {formatCategory(category)}
+                        </span>
+                        <span className="text-sm text-smoke">
+                          {bytes.length} byte{bytes.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    </button>
+
+                    {/* Category Bytes */}
+                    {!collapsedCategories.has(category) && (
+                      <div className="p-3 space-y-3 bg-void/30">
+                        {bytes.map((byte) => (
+                          <div
+                            key={byte.id}
+                            className="p-4 bg-slate border border-ash rounded-xl hover:border-ash/80 transition-colors"
+                          >
+                            <div className="flex items-start justify-between gap-3 mb-2">
+                              <span className="text-xs text-smoke/60 capitalize">{byte.type}</span>
+                              <span className="text-xs text-life">{byte.source.name}</span>
+                            </div>
+                            <p className="text-pearl text-sm leading-relaxed mb-2">
+                              "{byte.content}"
+                            </p>
+                            {byte.author && (
+                              <p className="text-smoke/60 text-xs mb-3">— {byte.author}</p>
+                            )}
+                            <div className="flex items-center justify-end">
+                              <button
+                                onClick={() => handleUnsaveByte(byte)}
+                                className="p-2 rounded-lg hover:bg-ash/50 transition-colors group"
+                                title="Remove from saved"
+                              >
+                                <BookmarkCheck className="w-4 h-4 text-life group-hover:text-smoke transition-colors" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+            </div>
           ) : (
+            /* Flat List View */
             <div className="space-y-3">
               {savedBytes.map((byte) => (
                 <div
@@ -648,55 +814,29 @@ function App() {
                   className="p-4 bg-slate border border-ash rounded-xl hover:border-ash/80 transition-colors"
                 >
                   <div className="flex items-start justify-between gap-3 mb-2">
-                    <span className="text-xs text-smoke/60 capitalize">{byte.type}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-smoke/60 capitalize">{byte.type}</span>
+                      <span className={`px-2 py-0.5 text-xs rounded-md border ${getCategoryColor(byte.category)}`}>
+                        {formatCategory(byte.category)}
+                      </span>
+                    </div>
                     <span className="text-xs text-life">{byte.source.name}</span>
                   </div>
                   <p className="text-pearl text-sm leading-relaxed mb-2">
                     "{byte.content}"
                   </p>
                   {byte.author && (
-                    <p className="text-smoke/60 text-xs">— {byte.author}</p>
+                    <p className="text-smoke/60 text-xs mb-3">— {byte.author}</p>
                   )}
-                  <button
-                    onClick={async () => {
-                      // Optimistic update
-                      setSavedBytes(prev => prev.filter(b => b.id !== byte.id));
-                      if (currentByte?.id === byte.id) {
-                        setCurrentByte({
-                          ...currentByte,
-                          userEngagement: {
-                            ...currentByte.userEngagement,
-                            vote: currentByte.userEngagement?.vote || 0,
-                            isSaved: false,
-                          },
-                        });
-                      }
-
-                      // Call API to unsave (if online)
-                      if (!usingMockData.current) {
-                        try {
-                          await toggleSaveByte(byte.id);
-                        } catch (error) {
-                          console.error('Failed to unsave byte:', error);
-                          // Revert on failure
-                          setSavedBytes(prev => [byte, ...prev]);
-                          if (currentByte?.id === byte.id) {
-                            setCurrentByte({
-                              ...currentByte,
-                              userEngagement: {
-                                ...currentByte.userEngagement,
-                                vote: currentByte.userEngagement?.vote || 0,
-                                isSaved: true,
-                              },
-                            });
-                          }
-                        }
-                      }
-                    }}
-                    className="mt-3 text-xs text-smoke/50 hover:text-rose transition-colors"
-                  >
-                    Remove
-                  </button>
+                  <div className="flex items-center justify-end">
+                    <button
+                      onClick={() => handleUnsaveByte(byte)}
+                      className="p-2 rounded-lg hover:bg-ash/50 transition-colors group"
+                      title="Remove from saved"
+                    >
+                      <BookmarkCheck className="w-4 h-4 text-life group-hover:text-smoke transition-colors" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
