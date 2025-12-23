@@ -104,7 +104,7 @@ router.get('/next', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.userId!;
 
-    // Get user with preferences and recent history
+    // Get user with preferences, history, and subscriptions
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
@@ -114,6 +114,10 @@ router.get('/next', async (req: AuthenticatedRequest, res: Response) => {
           orderBy: { shownAt: 'desc' },
           take: 100,
         },
+        subscriptions: {
+          where: { isActive: true },
+          select: { sourceId: true },
+        },
       },
     });
 
@@ -122,6 +126,18 @@ router.get('/next', async (req: AuthenticatedRequest, res: Response) => {
     }
 
     const seenByteIds = user.contentHistory.map((h) => h.byteId);
+    const userSourceIds = user.subscriptions.map((s) => s.sourceId);
+    const hasUserSubscriptions = userSourceIds.length > 0;
+
+    // If user disabled recommendations and has no subscriptions, return empty
+    if (!user.enableRecommendations && !hasUserSubscriptions) {
+      return res.json({
+        byte: null,
+        queueSize: 0,
+        hasUserSubscriptions: false,
+        isCommunityContent: false,
+      });
+    }
 
     // Get one personalized byte
     const bytes = await getPersonalizedFeed(
@@ -134,13 +150,25 @@ router.get('/next', async (req: AuthenticatedRequest, res: Response) => {
 
     if (bytes.length === 0) {
       // Fall back to popular if no personalized content
+      if (!user.enableRecommendations) {
+        // User disabled recommendations, don't show popular
+        return res.json({
+          byte: null,
+          queueSize: 0,
+          hasUserSubscriptions,
+          isCommunityContent: false,
+        });
+      }
+
       const popularBytes = await getPopularFeed(userId, [], 1);
       if (popularBytes.length === 0) {
-        return res.json({ byte: null, queueSize: 0 });
+        return res.json({ byte: null, queueSize: 0, hasUserSubscriptions, isCommunityContent: false });
       }
       return res.json({
         byte: formatByteResponse(popularBytes[0], userId),
         queueSize: await getQueueSize(userId, seenByteIds),
+        hasUserSubscriptions,
+        isCommunityContent: true, // Popular feed is always community content
       });
     }
 
@@ -153,9 +181,15 @@ router.get('/next', async (req: AuthenticatedRequest, res: Response) => {
       update: { shownAt: new Date() },
     });
 
+    // Check if this byte is from user's own subscriptions
+    const byteSourceId = bytes[0].edition?.sourceId;
+    const isFromUserSubscription = byteSourceId ? userSourceIds.includes(byteSourceId) : false;
+
     res.json({
       byte: formatByteResponse(bytes[0], userId),
       queueSize: await getQueueSize(userId, seenByteIds),
+      hasUserSubscriptions,
+      isCommunityContent: !isFromUserSubscription,
     });
   } catch (error) {
     console.error('Feed next error:', error);

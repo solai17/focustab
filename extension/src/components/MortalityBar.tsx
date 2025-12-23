@@ -6,12 +6,18 @@ interface MortalityBarProps {
   percentLived: number;
 }
 
-// Format name properly - handle email prefixes like "apple.solai" -> "Apple"
+// Format name properly - get first word and capitalize
 function formatDisplayName(name: string): string {
   if (!name) return '';
 
-  // Get first part (before space or dot)
-  const firstName = name.split(/[\s.]/)[0];
+  // If name contains @, it's an email - get prefix before @
+  const cleanName = name.includes('@') ? name.split('@')[0] : name;
+
+  // Get first word (space-separated) for display
+  // But preserve dots in names that aren't email-like patterns
+  const firstName = cleanName.includes('.') && cleanName.split('.').every(part => part.length <= 2)
+    ? cleanName.split('.')[0] // Likely email prefix like "john.doe" -> "John"
+    : cleanName.split(' ')[0]; // Normal name - just get first word
 
   // Capitalize first letter
   return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();

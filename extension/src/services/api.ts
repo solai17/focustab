@@ -35,6 +35,8 @@ export interface ByteResponse {
 export interface NextByteResponse {
   byte: ByteResponse | null;
   queueSize: number;
+  hasUserSubscriptions?: boolean;
+  isCommunityContent?: boolean;
 }
 
 export interface SavedBytesResponse {
@@ -88,11 +90,18 @@ export async function isAuthenticated(): Promise<boolean> {
 /**
  * Get the next byte for new tab experience
  */
-export async function fetchNextByte(): Promise<{ byte: ContentByte | null; queueSize: number }> {
+export async function fetchNextByte(): Promise<{
+  byte: ContentByte | null;
+  queueSize: number;
+  hasUserSubscriptions: boolean;
+  isCommunityContent: boolean;
+}> {
   const response = await apiRequest<NextByteResponse>('/feed/next');
   return {
     byte: response.byte ? toContentByte(response.byte) : null,
     queueSize: response.queueSize,
+    hasUserSubscriptions: response.hasUserSubscriptions ?? false,
+    isCommunityContent: response.isCommunityContent ?? true, // Default to community if not specified
   };
 }
 

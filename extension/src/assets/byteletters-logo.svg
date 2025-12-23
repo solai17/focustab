@@ -1,0 +1,47 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background (optional, remove for transparent) -->
+  <rect width="512" height="512" rx="96" fill="#1E1B4B"/>
+
+  <!-- Byte Grid Pattern - Creates pixelated "B" shape -->
+  <!-- Top row -->
+  <rect x="128" y="96" width="48" height="48" rx="8" fill="#6366F1"/>
+  <rect x="184" y="96" width="48" height="48" rx="8" fill="#6366F1"/>
+  <rect x="240" y="96" width="48" height="48" rx="8" fill="#6366F1"/>
+  <rect x="296" y="96" width="48" height="48" rx="8" fill="#818CF8"/>
+
+  <!-- Second row -->
+  <rect x="128" y="152" width="48" height="48" rx="8" fill="#6366F1"/>
+  <rect x="296" y="152" width="48" height="48" rx="8" fill="#6366F1"/>
+  <rect x="352" y="152" width="48" height="48" rx="8" fill="#F59E0B"/>
+
+  <!-- Third row -->
+  <rect x="128" y="208" width="48" height="48" rx="8" fill="#6366F1"/>
+  <rect x="296" y="208" width="48" height="48" rx="8" fill="#6366F1"/>
+
+  <!-- Middle row (B curve) -->
+  <rect x="128" y="264" width="48" height="48" rx="8" fill="#6366F1"/>
+  <rect x="184" y="264" width="48" height="48" rx="8" fill="#6366F1"/>
+  <rect x="240" y="264" width="48" height="48" rx="8" fill="#6366F1"/>
+  <rect x="296" y="264" width="48" height="48" rx="8" fill="#818CF8"/>
+
+  <!-- Fifth row -->
+  <rect x="128" y="320" width="48" height="48" rx="8" fill="#6366F1"/>
+  <rect x="296" y="320" width="48" height="48" rx="8" fill="#6366F1"/>
+  <rect x="352" y="320" width="48" height="48" rx="8" fill="#F59E0B"/>
+
+  <!-- Sixth row -->
+  <rect x="128" y="376" width="48" height="48" rx="8" fill="#6366F1"/>
+  <rect x="296" y="376" width="48" height="48" rx="8" fill="#6366F1"/>
+
+  <!-- Bottom row -->
+  <rect x="128" y="432" width="48" height="48" rx="8" fill="#6366F1"/>
+  <rect x="184" y="432" width="48" height="48" rx="8" fill="#6366F1"/>
+  <rect x="240" y="432" width="48" height="48" rx="8" fill="#6366F1"/>
+  <rect x="296" y="432" width="48" height="48" rx="8" fill="#818CF8"/>
+
+  <!-- Wisdom spark/lightbulb accent -->
+  <circle cx="380" cy="124" r="24" fill="#F59E0B"/>
+  <path d="M380 100 L380 84" stroke="#FBBF24" stroke-width="6" stroke-linecap="round"/>
+  <path d="M400 104 L412 92" stroke="#FBBF24" stroke-width="6" stroke-linecap="round"/>
+  <path d="M404 124 L420 124" stroke="#FBBF24" stroke-width="6" stroke-linecap="round"/>
+</svg>
