@@ -23,6 +23,14 @@ export interface DeepSeekExtractionResult {
   modelUsed: string;
 }
 
+interface DeepSeekResponse {
+  choices?: Array<{
+    message?: {
+      content?: string;
+    };
+  }>;
+}
+
 const BYTE_EXTRACTION_PROMPT = `You are a master curator extracting transformative insights from newsletters.
 
 Extract 3-7 "bytes" - bite-sized pieces of wisdom that make someone stop and think.
@@ -115,7 +123,7 @@ export async function extractBytesWithDeepSeek(
       throw new Error(`DeepSeek API error: ${response.status} - ${error}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as DeepSeekResponse;
     const responseText = data.choices?.[0]?.message?.content || '';
 
     // Parse JSON from response
