@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Learn how to set up automatic email forwarding for ByteLetters in Gmail and Outlook. Step-by-step guide.">
+  <meta property="og:title" content="Setup Guide - ByteLetters">
+  <meta property="og:description" content="Set up automatic newsletter forwarding in Gmail and Outlook.">
+  <title>Setup Guide - ByteLetters</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="guide-styles.css">
+</head>
+<body>
+  <!-- Grain overlay -->
+  <div class="grain-overlay"></div>
+
+  <!-- Navigation -->
+  <nav class="nav">
+    <div class="nav-container">
+      <a href="index.html" class="logo">
+        <img src="logo.png" alt="ByteLetters" class="logo-icon">
+        <span class="logo-text">ByteLetters</span>
+      </a>
+      <a href="https://chrome.google.com/webstore/detail/byteletters" class="nav-cta" target="_blank" rel="noopener">
+        <svg class="chrome-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <circle cx="12" cy="12" r="4"/>
+          <line x1="21.17" y1="8" x2="12" y2="8"/>
+          <line x1="3.95" y1="6.06" x2="8.54" y2="14"/>
+          <line x1="10.88" y1="21.94" x2="15.46" y2="14"/>
+        </svg>
+        Add to Chrome
+      </a>
+    </div>
+  </nav>
+
+  <!-- Guide Header -->
+  <header class="guide-header">
+    <div class="guide-header-content">
+      <a href="index.html" class="back-link">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="19" y1="12" x2="5" y2="12"/>
+          <polyline points="12 19 5 12 12 5"/>
+        </svg>
+        Back to Home
+      </a>
+      <h1>Set Up Automatic Forwarding</h1>
+      <p>Never manually forward again. Set it once, receive wisdom forever.</p>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="guide-main">
+    <div class="guide-container">
+
+      <!-- Prerequisites -->
+      <section class="guide-section prerequisites">
+        <h2>
+          <span class="section-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+          </span>
+          Before you start
+        </h2>
+        <div class="prereq-box">
+          <p>You'll need your unique ByteLetters inbox address. Find it in the extension:</p>
+          <ol>
+            <li>Open a new tab (with ByteLetters installed)</li>
+            <li>Click the <strong>Settings</strong> icon (gear) in the top right</li>
+            <li>Your inbox address looks like: <code>abc123@inbox.byteletters.app</code></li>
+          </ol>
+          <div class="inbox-example">
+            <span class="label">Your inbox:</span>
+            <code class="inbox-address">your-unique-id@inbox.byteletters.app</code>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab Selector -->
+      <div class="tab-selector">
+        <button class="tab-btn active" data-tab="gmail">
+          <svg class="gmail-icon" width="20" height="20" viewBox="0 0 24 24">
+            <path fill="currentColor" d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z"/>
+          </svg>
+          Gmail
+        </button>
+        <button class="tab-btn" data-tab="outlook">
+          <svg class="outlook-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="4" width="20" height="16" rx="2"/>
+            <path d="M22 6L12 13 2 6"/>
+          </svg>
+          Outlook
+        </button>
+      </div>
+
+      <!-- Gmail Guide -->
+      <section class="guide-section tab-content active" id="gmail-guide">
+        <h2>
+          <svg class="gmail-icon" width="28" height="28" viewBox="0 0 24 24">
+            <path fill="currentColor" d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.91 1.528-1.145C21.69 2.28 24 3.434 24 5.457z"/>
+          </svg>
+          Gmail Setup Guide
+        </h2>
+
+        <div class="steps-list">
+          <!-- Step 1 -->
+          <div class="step-item">
+            <div class="step-number">1</div>
+            <div class="step-content">
+              <h3>Open Gmail Settings</h3>
+              <p>Click the <strong>gear icon</strong> in the top right corner of Gmail, then click <strong>"See all settings"</strong>.</p>
+              <div class="step-tip">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="16" x2="12" y2="12"/>
+                  <line x1="12" y1="8" x2="12.01" y2="8"/>
+                </svg>
+                <span>Or go directly to: <a href="https://mail.google.com/mail/u/0/#settings/fwdandpop" target="_blank" rel="noopener">Gmail Forwarding Settings</a></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 2 -->
+          <div class="step-item">
+            <div class="step-number">2</div>
+            <div class="step-content">
+              <h3>Go to "Forwarding and POP/IMAP"</h3>
+              <p>Click on the <strong>"Forwarding and POP/IMAP"</strong> tab at the top of the settings page.</p>
+            </div>
+          </div>
+
+          <!-- Step 3 -->
+          <div class="step-item">
+            <div class="step-number">3</div>
+            <div class="step-content">
+              <h3>Add your ByteLetters address</h3>
+              <p>Click <strong>"Add a forwarding address"</strong> and enter your ByteLetters inbox:</p>
+              <div class="code-block">
+                <code>your-unique-id@inbox.byteletters.app</code>
+              </div>
+              <p>Click <strong>"Next"</strong>, then <strong>"Proceed"</strong> in the popup.</p>
+            </div>
+          </div>
+
+          <!-- Step 4 -->
+          <div class="step-item">
+            <div class="step-number">4</div>
+            <div class="step-content">
+              <h3>Skip verification (it's automatic)</h3>
+              <p>Google sends a verification email—but ByteLetters automatically confirms it. Just wait 30 seconds and refresh the settings page.</p>
+              <div class="step-tip success">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                  <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+                <span>The address should now show as <strong>"Confirmed"</strong></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 5 -->
+          <div class="step-item">
+            <div class="step-number">5</div>
+            <div class="step-content">
+              <h3>Create a filter for newsletters</h3>
+              <p>Instead of forwarding ALL emails, let's forward only newsletters:</p>
+              <ol class="sub-steps">
+                <li>Go to <strong>Settings → Filters and Blocked Addresses</strong></li>
+                <li>Click <strong>"Create a new filter"</strong></li>
+                <li>In the <strong>"From"</strong> field, enter the newsletter sender (e.g., <code>newsletter@jamesclear.com</code>)</li>
+                <li>Click <strong>"Create filter"</strong></li>
+                <li>Check <strong>"Forward it to"</strong> and select your ByteLetters address</li>
+                <li>Click <strong>"Create filter"</strong></li>
+              </ol>
+            </div>
+          </div>
+
+          <!-- Step 6 -->
+          <div class="step-item">
+            <div class="step-number">6</div>
+            <div class="step-content">
+              <h3>Pro tip: Forward multiple newsletters</h3>
+              <p>To forward multiple newsletters, use the OR operator in the filter:</p>
+              <div class="code-block">
+                <code>from:(newsletter@jamesclear.com OR hello@sahilbloom.com OR newsletter@morningbrew.com)</code>
+              </div>
+              <p>Or create separate filters for each newsletter—your choice!</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="done-box">
+          <div class="done-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+          </div>
+          <div class="done-text">
+            <h3>You're all set!</h3>
+            <p>New newsletters will automatically appear as bytes in your new tabs. Open a new tab to see them!</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Outlook Guide -->
+      <section class="guide-section tab-content" id="outlook-guide">
+        <h2>
+          <svg class="outlook-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="4" width="20" height="16" rx="2"/>
+            <path d="M22 6L12 13 2 6"/>
+          </svg>
+          Outlook Setup Guide
+        </h2>
+
+        <div class="steps-list">
+          <!-- Step 1 -->
+          <div class="step-item">
+            <div class="step-number">1</div>
+            <div class="step-content">
+              <h3>Open Outlook Settings</h3>
+              <p>Go to <a href="https://outlook.live.com/mail" target="_blank" rel="noopener">Outlook.com</a> and sign in. Click the <strong>gear icon</strong> in the top right, then <strong>"View all Outlook settings"</strong>.</p>
+            </div>
+          </div>
+
+          <!-- Step 2 -->
+          <div class="step-item">
+            <div class="step-number">2</div>
+            <div class="step-content">
+              <h3>Go to Rules</h3>
+              <p>In the Settings panel, go to <strong>Mail → Rules</strong>.</p>
+              <div class="step-tip">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/>
+                  <line x1="12" y1="16" x2="12" y2="12"/>
+                  <line x1="12" y1="8" x2="12.01" y2="8"/>
+                </svg>
+                <span>Or go directly to: <a href="https://outlook.live.com/mail/0/options/mail/rules" target="_blank" rel="noopener">Outlook Rules</a></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 3 -->
+          <div class="step-item">
+            <div class="step-number">3</div>
+            <div class="step-content">
+              <h3>Create a new rule</h3>
+              <p>Click <strong>"Add new rule"</strong> and give it a name like <strong>"Forward to ByteLetters"</strong>.</p>
+            </div>
+          </div>
+
+          <!-- Step 4 -->
+          <div class="step-item">
+            <div class="step-number">4</div>
+            <div class="step-content">
+              <h3>Set the condition</h3>
+              <p>Under <strong>"Add a condition"</strong>, select <strong>"From"</strong> and enter the newsletter sender's email address.</p>
+              <div class="code-block">
+                <code>newsletter@jamesclear.com</code>
+              </div>
+              <p>You can add multiple senders by clicking <strong>"Add another condition"</strong> and choosing <strong>"From"</strong> again.</p>
+            </div>
+          </div>
+
+          <!-- Step 5 -->
+          <div class="step-item">
+            <div class="step-number">5</div>
+            <div class="step-content">
+              <h3>Set the action</h3>
+              <p>Under <strong>"Add an action"</strong>, select <strong>"Forward to"</strong> and enter your ByteLetters inbox:</p>
+              <div class="code-block">
+                <code>your-unique-id@inbox.byteletters.app</code>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 6 -->
+          <div class="step-item">
+            <div class="step-number">6</div>
+            <div class="step-content">
+              <h3>Save the rule</h3>
+              <p>Click <strong>"Save"</strong> at the bottom of the dialog. Your rule is now active!</p>
+              <div class="step-tip success">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                  <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+                <span>The rule takes effect immediately for new incoming emails</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="done-box">
+          <div class="done-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+          </div>
+          <div class="done-text">
+            <h3>You're all set!</h3>
+            <p>New newsletters will automatically appear as bytes in your new tabs. Open a new tab to see them!</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Help Section -->
+      <section class="guide-section help-section">
+        <h2>
+          <span class="section-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+          </span>
+          Need help?
+        </h2>
+        <p>If you're having trouble setting up forwarding, we're here to help.</p>
+        <a href="mailto:hello@byteletters.app" class="help-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+            <polyline points="22,6 12,13 2,6"/>
+          </svg>
+          hello@byteletters.app
+        </a>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-container">
+      <div class="footer-brand">
+        <img src="logo.png" alt="ByteLetters" class="footer-logo">
+        <span>ByteLetters</span>
+      </div>
+      <div class="footer-links">
+        <a href="mailto:hello@byteletters.app">hello@byteletters.app</a>
+        <span class="footer-divider">·</span>
+        <span class="footer-copy">© 2025 ByteLetters</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Cookie Banner -->
+  <div class="cookie-banner" id="cookie-banner">
+    <div class="cookie-content">
+      <p>
+        <strong>We respect your privacy.</strong>
+        This site uses essential cookies only for functionality. We don't track you.
+      </p>
+      <div class="cookie-actions">
+        <button class="cookie-btn accept" id="cookie-accept">Accept</button>
+        <button class="cookie-btn decline" id="cookie-decline">Decline</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+  <script>
+    // Tab switching
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+
+        // Update buttons
+        tabBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        // Update content
+        tabContents.forEach(content => {
+          content.classList.remove('active');
+          if (content.id === `${tab}-guide`) {
+            content.classList.add('active');
+          }
+        });
+      });
+    });
+  </script>
+</body>
+</html>
