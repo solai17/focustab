@@ -1,7 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ProcessedEdition, ExtractedByte, ByteType, ByteCategory } from '../types';
 import { extractBytesWithGemini, isGeminiAvailable, NewsletterInfo, ExtractionResult, getGeminiQuotaStatus } from './gemini';
-import { extractBytesWithDeepSeek, isDeepSeekAvailable } from './deepseek';
 import { parseAIResponse, validateBytes } from '../utils/jsonParser';
 
 // Extended result type that includes newsletter info and model tracking
@@ -14,9 +13,8 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// Model priority: Gemini 3 Flash (best quality) → DeepSeek V3 (free) → Claude (paid)
+// Model priority: Gemini (free, 20/day) → Claude Sonnet (paid fallback)
 const USE_GEMINI_PRIMARY = process.env.USE_GEMINI_PRIMARY !== 'false';
-const USE_DEEPSEEK_FALLBACK = process.env.USE_DEEPSEEK_FALLBACK !== 'false';
 
 // =============================================================================
 // v2.0 CONTENT BYTE EXTRACTION
@@ -84,10 +82,9 @@ SCORING:
 Return ONLY valid JSON, no markdown or explanation.`;
 
 /**
- * Process newsletter edition with multi-model fallback:
- * 1. Gemini 3 Flash (highest quality, 20/day free)
- * 2. DeepSeek V3 (high quality, 5M tokens free)
- * 3. Claude Sonnet 4 (paid fallback)
+ * Process newsletter edition with model fallback:
+ * 1. Gemini (free, 20/day)
+ * 2. Claude Sonnet 4 (paid fallback)
  */
 export async function processEditionWithClaude(
   subject: string,
@@ -108,7 +105,7 @@ export async function processEditionWithClaude(
 
       // Check if quota was exceeded
       if (geminiResult.quotaExceeded) {
-        console.log('[AI] Gemini daily quota exceeded, trying DeepSeek...');
+        console.log('[AI] Gemini daily quota exceeded, falling back to Claude...');
       } else if (geminiResult.bytes.length > 0) {
         const result: ProcessedEditionWithSourceInfo = {
           summary: `Processed ${geminiResult.bytes.length} insights from ${sourceName}`,
@@ -127,43 +124,15 @@ export async function processEditionWithClaude(
 
         return result;
       } else {
-        console.log('[AI] Gemini returned no bytes, trying DeepSeek...');
+        console.log('[AI] Gemini returned no bytes, falling back to Claude...');
       }
     } catch (error) {
-      console.error('[AI] Gemini failed:', error);
+      console.error('[AI] Gemini failed, falling back to Claude:', error);
     }
   }
 
   // =========================================================================
-  // STEP 2: Try DeepSeek V3 (high quality, 5M tokens free, no rate limit)
-  // =========================================================================
-  if (USE_DEEPSEEK_FALLBACK && isDeepSeekAvailable()) {
-    try {
-      console.log(`[AI] Using DeepSeek V3 for: ${sourceName}`);
-      const deepseekResult = await extractBytesWithDeepSeek(textContent, sourceName);
-
-      if (deepseekResult.bytes.length > 0) {
-        const result: ProcessedEditionWithSourceInfo = {
-          summary: `Processed ${deepseekResult.bytes.length} insights from ${sourceName}`,
-          readTimeMinutes: Math.ceil(textContent.split(/\s+/).length / 200),
-          bytes: deepseekResult.bytes.map((byte) => ({
-            ...byte,
-            type: validateByteType(byte.type),
-            category: validateByteCategory(byte.category),
-          })),
-          modelUsed: deepseekResult.modelUsed,
-        };
-
-        return result;
-      }
-      console.log('[AI] DeepSeek returned no bytes, falling back to Claude...');
-    } catch (error) {
-      console.error('[AI] DeepSeek failed:', error);
-    }
-  }
-
-  // =========================================================================
-  // STEP 3: Fallback to Claude Sonnet 4 (paid)
+  // STEP 2: Fallback to Claude Sonnet 4 (paid)
   // =========================================================================
   try {
     console.log(`[AI] Using Claude Sonnet 4 (paid) for: ${sourceName}`);
@@ -212,7 +181,7 @@ ${truncatedContent}`,
     };
   } catch (error) {
     console.error('Error processing edition with Claude:', error);
-    throw new Error(`Failed to process with all models (Gemini, DeepSeek, Claude): ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(`Failed to process with AI (Gemini → Claude): ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
