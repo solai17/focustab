@@ -10,6 +10,7 @@
 const API_BASE_URL = 'https://byteletters-api.onrender.com'; // Production API
 const FALLBACK_API_URL = 'http://localhost:3000'; // Local dev
 const COOKIE_CONSENT_KEY = 'byteletters_cookie_consent';
+const BYTE_ROTATE_INTERVAL = 20000; // 20 seconds
 
 // Fallback bytes in case API is unavailable
 const FALLBACK_BYTES = [
@@ -61,6 +62,18 @@ const FALLBACK_BYTES = [
     author: "Naval Ravikant",
     source: { name: "Naval's Wisdom" },
   },
+  {
+    content: "Reading without applying is entertainment. Reading with action is transformation.",
+    type: "insight",
+    author: null,
+    source: { name: "Learning Principles" },
+  },
+  {
+    content: "The quality of your life depends on the quality of questions you ask yourself daily.",
+    type: "mental_model",
+    author: "Tony Robbins",
+    source: { name: "Peak Performance" },
+  },
 ];
 
 // =============================================================================
@@ -69,7 +82,7 @@ const FALLBACK_BYTES = [
 
 let bytes = [...FALLBACK_BYTES];
 let currentByteIndex = 0;
-let isLoading = false;
+let isTransitioning = false;
 
 // =============================================================================
 // DOM Elements
@@ -80,6 +93,7 @@ const byteTypeEl = document.getElementById('byte-type');
 const byteSourceEl = document.getElementById('byte-source');
 const byteTextEl = document.getElementById('byte-text');
 const byteAuthorEl = document.getElementById('byte-author');
+const byteContentEl = document.querySelector('.byte-content');
 const nextByteBtn = document.getElementById('next-byte');
 const cookieBanner = document.getElementById('cookie-banner');
 const cookieAcceptBtn = document.getElementById('cookie-accept');
@@ -135,64 +149,89 @@ function shuffleArray(array) {
 }
 
 /**
- * Display a byte in the card
+ * Display a byte in the card with smooth crossfade
  */
-function displayByte(byte) {
-  if (!byte) return;
+function displayByte(byte, animate = true) {
+  if (!byte || isTransitioning) return;
 
-  // Apply loading state
-  byteCard.classList.add('loading');
+  if (animate) {
+    isTransitioning = true;
 
-  // Small delay for animation effect
-  setTimeout(() => {
-    // Update type badge
-    byteTypeEl.textContent = byte.type || 'insight';
-    byteTypeEl.className = `byte-type ${byte.type || 'insight'}`;
+    // Fade out current content
+    byteContentEl.style.opacity = '0';
+    byteContentEl.style.transform = 'translateY(-8px)';
+    byteTypeEl.style.opacity = '0';
+    byteSourceEl.style.opacity = '0';
+    byteAuthorEl.style.opacity = '0';
 
-    // Update source
-    byteSourceEl.textContent = byte.source?.name || 'ByteLetters';
+    // Wait for fade out, then update content and fade in
+    setTimeout(() => {
+      updateByteContent(byte);
 
-    // Update content
-    byteTextEl.textContent = byte.content;
+      // Fade in new content
+      requestAnimationFrame(() => {
+        byteContentEl.style.opacity = '1';
+        byteContentEl.style.transform = 'translateY(0)';
+        byteTypeEl.style.opacity = '1';
+        byteSourceEl.style.opacity = '1';
+        byteAuthorEl.style.opacity = '1';
 
-    // Update author
-    if (byte.author) {
-      byteAuthorEl.textContent = `— ${byte.author}`;
-      byteAuthorEl.style.display = 'block';
-    } else {
-      byteAuthorEl.style.display = 'none';
-    }
+        setTimeout(() => {
+          isTransitioning = false;
+        }, 400);
+      });
+    }, 300);
+  } else {
+    updateByteContent(byte);
+  }
+}
 
-    // Remove loading state and add fade-in
-    byteCard.classList.remove('loading');
-    byteCard.classList.add('fade-in');
-    setTimeout(() => byteCard.classList.remove('fade-in'), 300);
-  }, 150);
+/**
+ * Update byte content without animation
+ */
+function updateByteContent(byte) {
+  // Update type badge
+  byteTypeEl.textContent = byte.type || 'insight';
+  byteTypeEl.className = `byte-type ${byte.type || 'insight'}`;
+
+  // Update source
+  byteSourceEl.textContent = byte.source?.name || 'ByteLetters';
+
+  // Update content
+  byteTextEl.textContent = byte.content;
+
+  // Update author
+  if (byte.author) {
+    byteAuthorEl.textContent = `— ${byte.author}`;
+    byteAuthorEl.style.display = 'block';
+  } else {
+    byteAuthorEl.style.display = 'none';
+  }
 }
 
 /**
  * Show next byte
  */
 function showNextByte() {
-  if (isLoading) return;
+  if (isTransitioning) return;
 
   currentByteIndex = (currentByteIndex + 1) % bytes.length;
-  displayByte(bytes[currentByteIndex]);
+  displayByte(bytes[currentByteIndex], true);
 }
 
 /**
  * Initialize byte preview
  */
 async function initBytePreview() {
-  // Display first fallback byte immediately
-  displayByte(bytes[0]);
+  // Display first fallback byte immediately (no animation)
+  displayByte(bytes[0], false);
 
   // Then fetch from API in background
   await fetchBytes();
 
   // Display a random byte from the fetched set
   currentByteIndex = Math.floor(Math.random() * bytes.length);
-  displayByte(bytes[currentByteIndex]);
+  displayByte(bytes[currentByteIndex], false);
 }
 
 // =============================================================================
@@ -237,7 +276,7 @@ function initCookieConsent() {
   }
 
   // Show banner after a short delay
-  setTimeout(showCookieBanner, 1500);
+  setTimeout(showCookieBanner, 2000);
 }
 
 // =============================================================================
@@ -266,7 +305,9 @@ function hidePrivacyModal() {
 // =============================================================================
 
 // Next byte button
-nextByteBtn.addEventListener('click', showNextByte);
+if (nextByteBtn) {
+  nextByteBtn.addEventListener('click', showNextByte);
+}
 
 // Keyboard navigation
 document.addEventListener('keydown', (e) => {
@@ -282,38 +323,57 @@ document.addEventListener('keydown', (e) => {
 });
 
 // Cookie consent buttons
-cookieAcceptBtn.addEventListener('click', () => {
-  saveConsentResponse(true);
-  hideCookieBanner();
-});
+if (cookieAcceptBtn) {
+  cookieAcceptBtn.addEventListener('click', () => {
+    saveConsentResponse(true);
+    hideCookieBanner();
+  });
+}
 
-cookieDeclineBtn.addEventListener('click', () => {
-  saveConsentResponse(false);
-  hideCookieBanner();
-});
+if (cookieDeclineBtn) {
+  cookieDeclineBtn.addEventListener('click', () => {
+    saveConsentResponse(false);
+    hideCookieBanner();
+  });
+}
 
 // Privacy modal
-privacyLink.addEventListener('click', showPrivacyModal);
-modalCloseBtn.addEventListener('click', hidePrivacyModal);
-privacyModal.addEventListener('click', (e) => {
-  if (e.target === privacyModal) {
-    hidePrivacyModal();
-  }
-});
+if (privacyLink) {
+  privacyLink.addEventListener('click', showPrivacyModal);
+}
+
+if (modalCloseBtn) {
+  modalCloseBtn.addEventListener('click', hidePrivacyModal);
+}
+
+if (privacyModal) {
+  privacyModal.addEventListener('click', (e) => {
+    if (e.target === privacyModal) {
+      hidePrivacyModal();
+    }
+  });
+}
 
 // =============================================================================
 // Initialize
 // =============================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
-  initBytePreview();
+  // Only init byte preview if we're on a page with the byte card
+  if (byteCard) {
+    initBytePreview();
+  }
+
   initCookieConsent();
 
   // Add smooth scroll behavior for anchor links
   document.querySelectorAll('a[href^="#"]').forEach(anchor => {
     anchor.addEventListener('click', function (e) {
+      const href = this.getAttribute('href');
+      if (href === '#') return;
+
       e.preventDefault();
-      const target = document.querySelector(this.getAttribute('href'));
+      const target = document.querySelector(href);
       if (target) {
         target.scrollIntoView({ behavior: 'smooth' });
       }
@@ -339,22 +399,30 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// Auto-rotate bytes every 8 seconds
+// =============================================================================
+// Auto-rotate bytes
+// =============================================================================
+
 let autoRotateInterval;
 
 function startAutoRotate() {
   autoRotateInterval = setInterval(() => {
     showNextByte();
-  }, 8000);
+  }, BYTE_ROTATE_INTERVAL);
 }
 
 function stopAutoRotate() {
   clearInterval(autoRotateInterval);
 }
 
-// Start auto-rotate after page loads
-setTimeout(startAutoRotate, 3000);
+// Start auto-rotate after page loads (only if byte card exists)
+if (byteCard) {
+  setTimeout(startAutoRotate, 5000); // Start after 5 seconds
 
-// Pause auto-rotate when user interacts with the byte card
-byteCard.addEventListener('mouseenter', stopAutoRotate);
-byteCard.addEventListener('mouseleave', startAutoRotate);
+  // Pause auto-rotate when user interacts with the byte card
+  byteCard.addEventListener('mouseenter', stopAutoRotate);
+  byteCard.addEventListener('mouseleave', () => {
+    stopAutoRotate();
+    startAutoRotate();
+  });
+}

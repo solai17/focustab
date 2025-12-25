@@ -1,0 +1,523 @@
+/**
+ * ByteLetters Setup Guide - Styles
+ * Extends styles.css with guide-specific components
+ */
+
+/* =============================================================================
+   Guide Header
+   ============================================================================= */
+
+.guide-header {
+  padding: var(--space-3xl) var(--space-xl);
+  padding-top: calc(var(--nav-height) + var(--space-2xl));
+  text-align: center;
+  background: linear-gradient(180deg, rgba(74, 222, 128, 0.03) 0%, transparent 100%);
+}
+
+.guide-header-content {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--smoke);
+  font-size: 0.875rem;
+  text-decoration: none;
+  margin-bottom: var(--space-lg);
+  transition: color var(--transition-fast);
+}
+
+.back-link svg {
+  width: 16px;
+  height: 16px;
+}
+
+.back-link:hover {
+  color: var(--life);
+}
+
+.guide-header h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 5vw, 3rem);
+  font-weight: 500;
+  color: var(--pearl);
+  margin-bottom: var(--space-md);
+  line-height: 1.2;
+}
+
+.guide-header p {
+  font-size: 1.125rem;
+  color: var(--smoke);
+  line-height: 1.6;
+}
+
+/* =============================================================================
+   Guide Main Content
+   ============================================================================= */
+
+.guide-main {
+  padding: var(--space-2xl) var(--space-xl);
+  padding-bottom: var(--space-3xl);
+}
+
+.guide-container {
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.guide-section {
+  margin-bottom: var(--space-2xl);
+}
+
+.guide-section h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 500;
+  color: var(--pearl);
+  margin-bottom: var(--space-lg);
+}
+
+.section-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+}
+
+.section-icon svg {
+  width: 24px;
+  height: 24px;
+  color: var(--life);
+}
+
+/* =============================================================================
+   Prerequisites
+   ============================================================================= */
+
+.prereq-box {
+  background: var(--slate);
+  border: 1px solid var(--ash);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl);
+}
+
+.prereq-box p {
+  color: var(--pearl);
+  margin-bottom: var(--space-md);
+}
+
+.prereq-box ol {
+  list-style: decimal;
+  padding-left: var(--space-lg);
+  margin-bottom: var(--space-lg);
+}
+
+.prereq-box li {
+  color: var(--smoke);
+  margin-bottom: var(--space-xs);
+  line-height: 1.6;
+}
+
+.prereq-box code {
+  background: var(--obsidian);
+  color: var(--life);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+
+.inbox-example {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  background: var(--obsidian);
+  border: 1px solid var(--ash);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+}
+
+.inbox-example .label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--smoke);
+}
+
+.inbox-example .inbox-address {
+  background: transparent;
+  color: var(--life);
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  padding: 0;
+}
+
+/* =============================================================================
+   Tab Selector
+   ============================================================================= */
+
+.tab-selector {
+  display: flex;
+  gap: var(--space-xs);
+  background: var(--slate);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xs);
+  margin-bottom: var(--space-xl);
+}
+
+.tab-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-lg);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--smoke);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.tab-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.tab-btn:hover {
+  color: var(--pearl);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tab-btn.active {
+  background: var(--obsidian);
+  color: var(--pearl);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.gmail-icon {
+  color: #ea4335;
+}
+
+.outlook-icon {
+  color: #0078d4;
+}
+
+/* =============================================================================
+   Tab Content
+   ============================================================================= */
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* =============================================================================
+   Steps List
+   ============================================================================= */
+
+.steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.step-item {
+  display: flex;
+  gap: var(--space-lg);
+}
+
+.step-number {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, var(--life) 0%, #22c55e 100%);
+  color: var(--void);
+  font-family: var(--font-body);
+  font-size: 1.125rem;
+  font-weight: 700;
+  border-radius: 50%;
+  box-shadow: 0 4px 12px rgba(74, 222, 128, 0.3);
+}
+
+.step-content {
+  flex: 1;
+  padding-top: var(--space-xs);
+}
+
+.step-content h3 {
+  font-family: var(--font-body);
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--pearl);
+  margin-bottom: var(--space-sm);
+}
+
+.step-content p {
+  color: var(--smoke);
+  line-height: 1.6;
+  margin-bottom: var(--space-sm);
+}
+
+.step-content a {
+  color: var(--life);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--transition-fast);
+}
+
+.step-content a:hover {
+  border-bottom-color: var(--life);
+}
+
+/* =============================================================================
+   Step Tips
+   ============================================================================= */
+
+.step-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  background: rgba(74, 222, 128, 0.1);
+  border: 1px solid rgba(74, 222, 128, 0.2);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  margin-top: var(--space-sm);
+}
+
+.step-tip svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  color: var(--life);
+  margin-top: 2px;
+}
+
+.step-tip span {
+  font-size: 0.875rem;
+  color: var(--pearl);
+  line-height: 1.5;
+}
+
+.step-tip.success {
+  background: rgba(74, 222, 128, 0.15);
+  border-color: rgba(74, 222, 128, 0.3);
+}
+
+/* =============================================================================
+   Sub-steps
+   ============================================================================= */
+
+.sub-steps {
+  list-style: decimal;
+  padding-left: var(--space-lg);
+  margin-top: var(--space-sm);
+}
+
+.sub-steps li {
+  color: var(--smoke);
+  margin-bottom: var(--space-xs);
+  line-height: 1.6;
+}
+
+.sub-steps code {
+  background: var(--obsidian);
+  color: var(--life);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+/* =============================================================================
+   Code Block
+   ============================================================================= */
+
+.code-block {
+  background: var(--obsidian);
+  border: 1px solid var(--ash);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  margin: var(--space-sm) 0;
+  overflow-x: auto;
+}
+
+.code-block code {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  color: var(--life);
+  word-break: break-all;
+}
+
+/* =============================================================================
+   Done Box
+   ============================================================================= */
+
+.done-box {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  background: linear-gradient(135deg, rgba(74, 222, 128, 0.15) 0%, rgba(74, 222, 128, 0.05) 100%);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  border-radius: var(--radius-lg);
+  padding: var(--space-xl);
+  margin-top: var(--space-2xl);
+}
+
+.done-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  background: var(--life);
+  border-radius: 50%;
+  box-shadow: 0 8px 24px rgba(74, 222, 128, 0.4);
+}
+
+.done-icon svg {
+  width: 28px;
+  height: 28px;
+  color: var(--void);
+}
+
+.done-text h3 {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: var(--pearl);
+  margin-bottom: var(--space-xs);
+}
+
+.done-text p {
+  color: var(--smoke);
+  line-height: 1.5;
+}
+
+/* =============================================================================
+   Help Section
+   ============================================================================= */
+
+.help-section {
+  text-align: center;
+  padding: var(--space-2xl);
+  background: var(--slate);
+  border: 1px solid var(--ash);
+  border-radius: var(--radius-lg);
+}
+
+.help-section h2 {
+  justify-content: center;
+}
+
+.help-section p {
+  color: var(--smoke);
+  margin-bottom: var(--space-lg);
+}
+
+.help-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  background: var(--obsidian);
+  color: var(--life);
+  text-decoration: none;
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--ash);
+  font-weight: 500;
+  transition: all var(--transition-fast);
+}
+
+.help-link svg {
+  width: 20px;
+  height: 20px;
+}
+
+.help-link:hover {
+  background: var(--ash);
+  border-color: var(--life);
+}
+
+/* =============================================================================
+   Responsive
+   ============================================================================= */
+
+@media (max-width: 640px) {
+  .guide-header {
+    padding: var(--space-2xl) var(--space-md);
+    padding-top: calc(var(--nav-height) + var(--space-xl));
+  }
+
+  .guide-main {
+    padding: var(--space-xl) var(--space-md);
+  }
+
+  .tab-selector {
+    flex-direction: column;
+  }
+
+  .tab-btn {
+    padding: var(--space-sm) var(--space-md);
+  }
+
+  .step-item {
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+
+  .step-number {
+    width: 32px;
+    height: 32px;
+    font-size: 1rem;
+  }
+
+  .step-content {
+    padding-top: 0;
+    padding-left: var(--space-sm);
+    border-left: 2px solid var(--ash);
+  }
+
+  .done-box {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .prereq-box {
+    padding: var(--space-lg);
+  }
+
+  .code-block code {
+    font-size: 0.75rem;
+  }
+}
