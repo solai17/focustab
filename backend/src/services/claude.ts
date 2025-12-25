@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { ProcessedEdition, ExtractedByte, ByteType, ByteCategory } from '../types';
 import { extractBytesWithGemini, isGeminiAvailable, NewsletterInfo, ExtractionResult, getGeminiQuotaStatus } from './gemini';
 import { extractBytesWithDeepSeek, isDeepSeekAvailable } from './deepseek';
+import { parseAIResponse, validateBytes } from '../utils/jsonParser';
 
 // Extended result type that includes newsletter info and model tracking
 export interface ProcessedEditionWithSourceInfo extends ProcessedEdition {
@@ -188,34 +189,19 @@ ${truncatedContent}`,
     const responseText =
       message.content[0].type === 'text' ? message.content[0].text : '';
 
-    // Parse JSON response - handle markdown code blocks
-    let jsonStr = responseText;
+    // Parse JSON using robust parser
+    const parsed = parseAIResponse<{ bytes?: any[]; summary?: string; readTimeMinutes?: number }>(responseText);
 
-    const codeBlockMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (codeBlockMatch) {
-      jsonStr = codeBlockMatch[1];
+    if (!parsed) {
+      throw new Error('Could not parse JSON from Claude response');
     }
 
-    const objectMatch = jsonStr.match(/\{[\s\S]*\}/);
-    if (!objectMatch) {
-      throw new Error('Could not find JSON object in Claude response');
-    }
-
-    const parsed = JSON.parse(objectMatch[0]);
-
-    const validBytes: ExtractedByte[] = (parsed.bytes || [])
-      .filter((byte: any) => {
-        const len = byte.content?.length || 0;
-        return byte.content && len >= 30 && len <= 500 && (byte.qualityScore || 0.65) >= 0.65;
-      })
-      .map((byte: any) => ({
-        content: byte.content.trim(),
-        type: validateByteType(byte.type),
-        author: byte.author || null,
-        context: byte.context || null,
-        category: validateByteCategory(byte.category),
-        qualityScore: Math.min(1, Math.max(0, byte.qualityScore || 0.5)),
-      }));
+    // Validate bytes using utility, then apply type/category validation
+    const validBytes: ExtractedByte[] = validateBytes(parsed.bytes || []).map((byte) => ({
+      ...byte,
+      type: validateByteType(byte.type),
+      category: validateByteCategory(byte.category),
+    }));
 
     return {
       summary: parsed.summary || 'Newsletter content processed.',
