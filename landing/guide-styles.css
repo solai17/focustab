@@ -207,11 +207,32 @@
 }
 
 .gmail-icon {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  max-width: 28px;
+  max-height: 28px;
   color: #ea4335;
+  flex-shrink: 0;
 }
 
 .outlook-icon {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  max-width: 28px;
+  max-height: 28px;
   color: #0078d4;
+  flex-shrink: 0;
+}
+
+/* Section header icons (larger) */
+.guide-section h2 .gmail-icon,
+.guide-section h2 .outlook-icon {
+  width: 28px;
+  height: 28px;
 }
 
 /* =============================================================================
