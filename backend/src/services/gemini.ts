@@ -11,6 +11,7 @@
 
 import { GoogleGenAI } from '@google/genai';
 import { prisma } from './db';
+import { parseAIResponse, validateBytes } from '../utils/jsonParser';
 
 // Initialize Gemini client
 const apiKey = process.env.GEMINI_API_KEY;
@@ -241,43 +242,16 @@ export async function extractBytesWithGemini(
 
     const responseText = response.text || '';
 
-    // Parse JSON from response
-    let jsonStr = responseText;
+    // Parse JSON using robust parser
+    const parsed = parseAIResponse<{ bytes?: any[]; newsletterInfo?: any }>(responseText);
 
-    // Remove markdown code blocks if present
-    const codeBlockMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (codeBlockMatch) {
-      jsonStr = codeBlockMatch[1];
-    }
-
-    // Find JSON object
-    const objectMatch = jsonStr.match(/\{[\s\S]*\}/);
-    if (!objectMatch) {
+    if (!parsed) {
       console.error('[Gemini] Could not parse JSON from response');
       return { bytes: [], modelUsed: model };
     }
 
-    const parsed = JSON.parse(objectMatch[0]);
-
-    // Validate and filter bytes
-    const validBytes: ExtractedByte[] = (parsed.bytes || [])
-      .filter((byte: any) => {
-        const len = byte.content?.length || 0;
-        return (
-          byte.content &&
-          len >= 30 &&
-          len <= 500 &&
-          (byte.qualityScore || 0.65) >= 0.65
-        );
-      })
-      .map((byte: any) => ({
-        content: byte.content.trim(),
-        type: byte.type || 'insight',
-        author: byte.author || null,
-        context: byte.context || null,
-        category: byte.category || 'general',
-        qualityScore: Math.min(1, Math.max(0, byte.qualityScore || 0.7)),
-      }));
+    // Validate and filter bytes using utility
+    const validBytes: ExtractedByte[] = validateBytes(parsed.bytes || []) as ExtractedByte[];
 
     console.log(`[Gemini] Extracted ${validBytes.length} bytes from ${newsletterSource} using ${model}`);
 
