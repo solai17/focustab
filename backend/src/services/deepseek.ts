@@ -14,6 +14,7 @@
  */
 
 import { ExtractedByte } from './gemini';
+import { parseAIResponse, validateBytes } from '../utils/jsonParser';
 
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 const apiKey = process.env.DEEPSEEK_API_KEY;
@@ -126,43 +127,16 @@ export async function extractBytesWithDeepSeek(
     const data = await response.json() as DeepSeekResponse;
     const responseText = data.choices?.[0]?.message?.content || '';
 
-    // Parse JSON from response
-    let jsonStr = responseText;
+    // Parse JSON using robust parser
+    const parsed = parseAIResponse<{ bytes?: any[] }>(responseText);
 
-    // Remove markdown code blocks if present
-    const codeBlockMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (codeBlockMatch) {
-      jsonStr = codeBlockMatch[1];
-    }
-
-    // Find JSON object
-    const objectMatch = jsonStr.match(/\{[\s\S]*\}/);
-    if (!objectMatch) {
+    if (!parsed) {
       console.error('[DeepSeek] Could not parse JSON from response');
       return { bytes: [], modelUsed: model };
     }
 
-    const parsed = JSON.parse(objectMatch[0]);
-
-    // Validate and filter bytes
-    const validBytes: ExtractedByte[] = (parsed.bytes || [])
-      .filter((byte: any) => {
-        const len = byte.content?.length || 0;
-        return (
-          byte.content &&
-          len >= 30 &&
-          len <= 500 &&
-          (byte.qualityScore || 0.65) >= 0.65
-        );
-      })
-      .map((byte: any) => ({
-        content: byte.content.trim(),
-        type: byte.type || 'insight',
-        author: byte.author || null,
-        context: byte.context || null,
-        category: byte.category || 'general',
-        qualityScore: Math.min(1, Math.max(0, byte.qualityScore || 0.7)),
-      }));
+    // Validate and filter bytes using utility
+    const validBytes: ExtractedByte[] = validateBytes(parsed.bytes || []) as ExtractedByte[];
 
     console.log(`[DeepSeek] Extracted ${validBytes.length} bytes from ${newsletterSource}`);
 
