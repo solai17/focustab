@@ -541,126 +541,130 @@ body {
 
 .discover-section {
   padding: var(--space-3xl) var(--space-xl);
-  background: var(--void);
+  background: var(--obsidian);
+  border-top: 1px solid var(--ash);
+  border-bottom: 1px solid var(--ash);
 }
 
-.discover-content {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-3xl);
-  align-items: center;
+.discover-header {
+  text-align: center;
+  max-width: 600px;
+  margin: 0 auto var(--space-2xl);
 }
 
-.discover-text .section-title {
-  text-align: left;
+.discover-label {
+  display: inline-block;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--life);
+  margin-bottom: var(--space-md);
+}
+
+.discover-title {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 4vw, 2.75rem);
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--pearl);
   margin-bottom: var(--space-lg);
-  font-size: clamp(1.5rem, 3vw, 2rem);
-  line-height: 1.4;
 }
 
-.discover-text .section-title .highlight {
+.discover-title em {
+  font-style: italic;
   color: var(--life);
 }
 
-.discover-text > p {
+.discover-subtitle {
   font-size: 1.0625rem;
   color: var(--smoke);
   line-height: 1.7;
-  margin-bottom: var(--space-xl);
 }
 
-.discover-features {
-  list-style: none;
+/* Newsletter Pills Grid */
+.newsletter-grid {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-2xl);
+  max-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
-.discover-features li {
+.newsletter-pill {
   display: flex;
   align-items: center;
-  gap: var(--space-md);
-  font-size: 1rem;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-lg);
+  background: var(--slate);
+  border: 1px solid var(--ash);
+  border-radius: 100px;
+  transition: all var(--transition-fast);
+}
+
+.newsletter-pill:hover {
+  border-color: var(--life-dim);
+  background: var(--ash);
+  transform: translateY(-2px);
+}
+
+.pill-name {
+  font-size: 0.9375rem;
+  font-weight: 500;
   color: var(--pearl);
 }
 
-.discover-features li svg {
-  width: 20px;
-  height: 20px;
-  stroke: var(--life);
-  flex-shrink: 0;
+.pill-dot {
+  width: 4px;
+  height: 4px;
+  background: var(--smoke);
+  border-radius: 50%;
 }
 
-.discover-visual {
+.pill-category {
+  font-size: 0.8125rem;
+  color: var(--life);
+  font-weight: 500;
+}
+
+.newsletter-pill.more {
+  background: transparent;
+  border-color: var(--ash);
+  border-style: dashed;
+}
+
+.newsletter-pill.more .pill-name {
+  color: var(--smoke);
+  font-weight: 400;
+}
+
+/* Benefits Row */
+.discover-benefits {
   display: flex;
   justify-content: center;
-  align-items: center;
+  gap: var(--space-2xl);
+  flex-wrap: wrap;
 }
 
-.newsletter-stack {
-  position: relative;
-  width: 280px;
-  height: 280px;
-}
-
-.newsletter-card {
-  position: absolute;
-  width: 220px;
-  padding: var(--space-lg);
-  background: var(--obsidian);
-  border: 1px solid var(--ash);
-  border-radius: 12px;
+.benefit {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  align-items: baseline;
+  gap: var(--space-sm);
 }
 
-.newsletter-card:hover {
-  transform: translateY(-4px) rotate(0deg) !important;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
-  z-index: 10;
-}
-
-.newsletter-card .newsletter-name {
-  font-weight: 600;
-  color: var(--pearl);
-  font-size: 1rem;
-}
-
-.newsletter-card .newsletter-tag {
+.benefit-number {
+  font-family: var(--font-mono);
   font-size: 0.75rem;
   color: var(--life);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-weight: 600;
 }
 
-.newsletter-card.n1 {
-  top: 0;
-  left: 0;
-  transform: rotate(-6deg);
-  z-index: 4;
-}
-
-.newsletter-card.n2 {
-  top: 30px;
-  left: 40px;
-  transform: rotate(3deg);
-  z-index: 3;
-}
-
-.newsletter-card.n3 {
-  top: 70px;
-  left: 20px;
-  transform: rotate(-2deg);
-  z-index: 2;
-}
-
-.newsletter-card.n4 {
-  top: 110px;
-  left: 50px;
-  transform: rotate(4deg);
-  z-index: 1;
+.benefit-text {
+  font-size: 0.9375rem;
+  color: var(--smoke);
 }
 
 /* =============================================================================
@@ -1139,21 +1143,13 @@ body {
     padding: var(--space-md) 0;
   }
 
-  .discover-content {
-    grid-template-columns: 1fr;
-    gap: var(--space-2xl);
+  .discover-benefits {
+    gap: var(--space-lg);
   }
 
-  .discover-text .section-title {
-    text-align: center;
-  }
-
-  .discover-text > p {
-    text-align: center;
-  }
-
-  .discover-features {
-    align-items: center;
+  .benefit {
+    flex-basis: 100%;
+    justify-content: center;
   }
 
   .setup-teaser-content {
@@ -1209,8 +1205,20 @@ body {
     padding: var(--space-2xl) var(--space-md);
   }
 
-  .newsletter-stack {
-    transform: scale(0.85);
+  .newsletter-grid {
+    gap: var(--space-xs);
+  }
+
+  .newsletter-pill {
+    padding: var(--space-xs) var(--space-md);
+  }
+
+  .pill-name {
+    font-size: 0.8125rem;
+  }
+
+  .pill-category {
+    font-size: 0.75rem;
   }
 
   .setup-teaser-content {
