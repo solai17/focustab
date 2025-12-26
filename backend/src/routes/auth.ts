@@ -50,6 +50,19 @@ router.post('/google', async (req: Request, res: Response) => {
         if (lifeExpectancy !== undefined) updateData.lifeExpectancy = lifeExpectancy;
         if (enableRecommendations !== undefined) updateData.enableRecommendations = enableRecommendations;
 
+        // Regenerate inbox email if user is providing their actual name for the first time
+        // This fixes the issue where inbox email was created from email prefix before onboarding
+        if (name && user.inboxEmail) {
+          const emailPrefix = googleEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+          const currentInboxPrefix = user.inboxEmail.split('@')[0].split('-')[0];
+
+          // If current inbox email starts with the email prefix (not the user's chosen name), regenerate it
+          if (currentInboxPrefix === emailPrefix || currentInboxPrefix === emailPrefix.slice(0, 15)) {
+            const newInboxEmail = await generateInboxEmail(name);
+            updateData.inboxEmail = newInboxEmail;
+          }
+        }
+
         if (Object.keys(updateData).length > 0) {
           user = await prisma.user.update({
             where: { id: user.id },
