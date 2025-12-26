@@ -8,6 +8,8 @@ import {
   CheckCircle,
   Sparkles,
   ExternalLink,
+  Copy,
+  Check,
 } from 'lucide-react';
 import type { ContentByte, VoteValue } from '../types';
 
@@ -37,7 +39,21 @@ export function ByteCard({
   const [localVote, setLocalVote] = useState<VoteValue>(0);
   const [localSaved, setLocalSaved] = useState(false);
   const [showShareToast, setShowShareToast] = useState(false);
+  const [emailCopied, setEmailCopied] = useState(false);
   const viewStartTime = useRef(Date.now());
+
+  // Copy email to clipboard
+  const copyEmailToClipboard = async () => {
+    if (inboxEmail) {
+      try {
+        await navigator.clipboard.writeText(inboxEmail);
+        setEmailCopied(true);
+        setTimeout(() => setEmailCopied(false), 2000);
+      } catch (error) {
+        console.error('Failed to copy email:', error);
+      }
+    }
+  };
 
   // Reset state when byte changes (fixes issue #2)
   useEffect(() => {
@@ -223,18 +239,36 @@ export function ByteCard({
       {/* Queue Indicator / Community Content CTA */}
       <div className="flex items-center justify-center mt-4 gap-2 text-smoke text-sm">
         {isCommunityContent ? (
-          <div className="text-center px-4 py-2 bg-slate/30 rounded-lg border border-ash/20">
+          <div className="text-center px-4 py-3 bg-slate/30 rounded-lg border border-ash/20">
             <div className="flex items-center justify-center gap-2 mb-2">
               <Sparkles className="w-4 h-4 text-life" />
-              <span className="text-pearl font-medium">Get your own personalized bytes</span>
+              <span className="text-pearl font-medium">Get personalized insights from your newsletters</span>
             </div>
-            <p className="text-smoke/80 text-xs mb-2">
-              Forward your favorite newsletters to:
-            </p>
+            <a
+              href="https://www.byteletters.app/setup-guide.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-smoke/80 text-xs hover:text-life transition-colors underline underline-offset-2"
+            >
+              One-time email forwarding setup →
+            </a>
             {inboxEmail && (
-              <code className="text-life text-xs bg-void/50 px-3 py-1 rounded-md select-all">
-                {inboxEmail}
-              </code>
+              <div className="flex items-center justify-center gap-2 mt-3">
+                <code className="text-life text-xs bg-void/50 px-3 py-1 rounded-md">
+                  {inboxEmail}
+                </code>
+                <button
+                  onClick={copyEmailToClipboard}
+                  className="p-1.5 rounded-md hover:bg-ash/30 transition-colors"
+                  title="Copy email address"
+                >
+                  {emailCopied ? (
+                    <Check className="w-3.5 h-3.5 text-life" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5 text-smoke/60 hover:text-smoke" />
+                  )}
+                </button>
+              </div>
             )}
           </div>
         ) : queueSize > 0 ? (
