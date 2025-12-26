@@ -46,9 +46,18 @@ router.post('/google', async (req: Request, res: Response) => {
         const updateData: Record<string, unknown> = {};
         // Always update name if provided - user's name takes precedence over email prefix
         if (name) updateData.name = name;
-        if (birthDate && !user.birthDate) updateData.birthDate = new Date(birthDate);
+        // Always allow birthDate to be set/updated during onboarding
+        if (birthDate) updateData.birthDate = new Date(birthDate);
         if (lifeExpectancy !== undefined) updateData.lifeExpectancy = lifeExpectancy;
         if (enableRecommendations !== undefined) updateData.enableRecommendations = enableRecommendations;
+
+        // Mark onboarding complete if we now have both name and birthDate
+        // Check both: new values from request OR existing values in DB
+        const finalName = name || user.name;
+        const finalBirthDate = birthDate || user.birthDate;
+        if (finalName && finalBirthDate && !user.onboardingCompleted) {
+          updateData.onboardingCompleted = true;
+        }
 
         // Regenerate inbox email if user is providing their actual name for the first time
         // This fixes the issue where inbox email was created from email prefix before onboarding
