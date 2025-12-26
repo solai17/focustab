@@ -1,17 +1,79 @@
-import { v4 as uuidv4 } from 'uuid';
+import prisma from './db';
 
-const INBOX_DOMAIN = process.env.INBOX_DOMAIN || 'focustab.app';
+const INBOX_DOMAIN = process.env.INBOX_DOMAIN || 'inbox.byteletters.app';
+
+/**
+ * Generate a short alphanumeric code (e.g., "7k", "42", "x3")
+ */
+function generateShortCode(length: number = 2): string {
+  const chars = '23456789abcdefghjkmnpqrstuvwxyz'; // Removed confusing chars: 0,1,i,l,o
+  let code = '';
+  for (let i = 0; i < length; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+/**
+ * Sanitize username for email: lowercase, alphanumeric, max 15 chars
+ */
+function sanitizeUsername(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .slice(0, 15) || 'user';
+}
 
 /**
  * Generate a unique inbox email address for a user
+ * Format: username-shortcode@inbox.byteletters.app
+ * Examples: james-7k@inbox.byteletters.app, solai-42@inbox.byteletters.app
  */
-export function generateInboxEmail(name: string): string {
-  const slug = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '')
-    .slice(0, 10);
-  const random = uuidv4().split('-')[0]; // First segment of UUID
-  return `${slug}-${random}@${INBOX_DOMAIN}`;
+export async function generateInboxEmail(name: string): Promise<string> {
+  const username = sanitizeUsername(name);
+  const maxRetries = 10;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    // First attempt: try just username (cleanest)
+    // Subsequent attempts: add progressively longer codes
+    let email: string;
+
+    if (attempt === 0) {
+      // Try just username first (e.g., "james@inbox.byteletters.app")
+      email = `${username}@${INBOX_DOMAIN}`;
+    } else if (attempt <= 3) {
+      // Try with 2-char code (e.g., "james-7k@inbox.byteletters.app")
+      const code = generateShortCode(2);
+      email = `${username}-${code}@${INBOX_DOMAIN}`;
+    } else {
+      // Try with 3-char code for more uniqueness (e.g., "james-x7k@inbox.byteletters.app")
+      const code = generateShortCode(3);
+      email = `${username}-${code}@${INBOX_DOMAIN}`;
+    }
+
+    // Check if email already exists
+    const existing = await prisma.user.findFirst({
+      where: { inboxEmail: email }
+    });
+
+    if (!existing) {
+      return email;
+    }
+  }
+
+  // Final fallback: username + timestamp suffix
+  const timestamp = Date.now().toString(36).slice(-4);
+  return `${username}-${timestamp}@${INBOX_DOMAIN}`;
+}
+
+/**
+ * Synchronous version for backwards compatibility (uses random, no collision check)
+ * @deprecated Use generateInboxEmail instead
+ */
+export function generateInboxEmailSync(name: string): string {
+  const username = sanitizeUsername(name);
+  const code = generateShortCode(2);
+  return `${username}-${code}@${INBOX_DOMAIN}`;
 }
 
 /**

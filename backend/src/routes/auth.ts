@@ -59,7 +59,7 @@ router.post('/google', async (req: Request, res: Response) => {
       }
     } else {
       // New user - create account
-      const inboxEmail = generateInboxEmail(name || googleEmail.split('@')[0]);
+      const inboxEmail = await generateInboxEmail(name || googleEmail.split('@')[0]);
 
       user = await prisma.user.create({
         data: {
@@ -139,7 +139,7 @@ router.post('/signup', async (req: Request, res: Response) => {
     const passwordHash = await bcrypt.hash(password, 12);
 
     // Generate unique inbox email
-    const inboxEmail = generateInboxEmail(name);
+    const inboxEmail = await generateInboxEmail(name);
 
     // Create user
     const user = await prisma.user.create({
