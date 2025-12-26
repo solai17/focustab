@@ -684,6 +684,160 @@ async function scrapeAlexAndBooks(config: NewsletterConfig): Promise<EditionData
 }
 
 // =============================================================================
+// NAVAL RAVIKANT ARCHIVE SCRAPER
+// =============================================================================
+
+async function scrapeNaval(config: NewsletterConfig): Promise<EditionData[]> {
+  console.log(`\n[${config.name}] Starting scrape...`);
+  const editions: EditionData[] = [];
+  const seenUrls = new Set<string>();
+
+  // Cutoff date: only posts from 2018 onwards
+  const CUTOFF_DATE = new Date('2018-01-01');
+
+  // Try with browser first (site may have JS rendering)
+  let archiveHtml = await fetchPageWithBrowser(config.archiveUrl, 'article, .post, a[href]');
+
+  // Fallback to axios
+  if (!archiveHtml) {
+    archiveHtml = await fetchPage(config.archiveUrl);
+  }
+
+  if (!archiveHtml) {
+    console.log(`[${config.name}] Failed to load archive page`);
+    return editions;
+  }
+
+  const $ = cheerio.load(archiveHtml);
+  const links: { url: string; title: string; date?: Date }[] = [];
+
+  // Find all post links on nav.al
+  // Naval's site uses various link formats - look for article/post links
+  $('a').each((_, el) => {
+    const href = $(el).attr('href') || '';
+    const text = $(el).text().trim();
+
+    // Skip navigation, social, and non-content links
+    if (!href ||
+        href === '/' ||
+        href === '/archive' ||
+        href.startsWith('#') ||
+        href.includes('twitter.com') ||
+        href.includes('youtube.com') ||
+        href.includes('mailto:') ||
+        href.includes('/tag/') ||
+        href.includes('/category/')) {
+      return;
+    }
+
+    // Match internal post links (nav.al posts typically have short slugs)
+    const isInternalPost = (
+      (href.startsWith('/') && href.length > 1 && !href.includes('.')) ||
+      (href.startsWith('https://nav.al/') && href !== 'https://nav.al/' && href !== 'https://nav.al/archive')
+    );
+
+    if (isInternalPost && text.length > 3) {
+      const fullUrl = href.startsWith('http') ? href : `https://nav.al${href}`;
+
+      if (!seenUrls.has(fullUrl)) {
+        seenUrls.add(fullUrl);
+        links.push({
+          url: fullUrl,
+          title: cleanTitle(text)
+        });
+      }
+    }
+  });
+
+  console.log(`[${config.name}] Found ${links.length} potential post links`);
+
+  // Scrape each edition
+  let skippedOld = 0;
+  const toScrape = links.slice(0, MAX_EDITIONS_PER_SOURCE);
+
+  for (let i = 0; i < toScrape.length; i++) {
+    const { url, title } = toScrape[i];
+    console.log(`[${config.name}] Scraping ${i + 1}/${toScrape.length}: ${title.substring(0, 50)}...`);
+
+    await sleep(DELAY_BETWEEN_REQUESTS);
+
+    // Try browser first for better content extraction
+    let pageHtml = await fetchPageWithBrowser(url, 'article, .post-content, .entry-content, main');
+    if (!pageHtml) {
+      pageHtml = await fetchPage(url);
+    }
+
+    if (!pageHtml) continue;
+
+    const page$ = cheerio.load(pageHtml);
+
+    // Remove unwanted elements
+    page$('nav, header, footer, .sidebar, .related-posts, .comments, script, style, .share-buttons').remove();
+
+    // Extract date first to check cutoff
+    const dateStr = page$('time').attr('datetime') ||
+                   page$('meta[property="article:published_time"]').attr('content') ||
+                   page$('.date').text() ||
+                   page$('.post-date').text() ||
+                   page$('meta[name="date"]').attr('content');
+
+    let publishedAt = new Date();
+    if (dateStr) {
+      const parsed = new Date(dateStr);
+      if (!isNaN(parsed.getTime())) {
+        publishedAt = parsed;
+      }
+    }
+
+    // Skip posts older than 2018
+    if (publishedAt < CUTOFF_DATE) {
+      skippedOld++;
+      if (skippedOld <= 3) {
+        console.log(`  [${config.name}] Skipped (before 2018): ${title.substring(0, 40)}... (${publishedAt.getFullYear()})`);
+      } else if (skippedOld === 4) {
+        console.log(`  [${config.name}] (suppressing further old post logs...)`);
+      }
+      continue;
+    }
+
+    // Try multiple selectors for content extraction
+    let articleHtml = '';
+    let articleText = '';
+    const selectors = ['article', '.post-content', '.entry-content', 'main', '.content', '#content', '.post', 'body'];
+
+    for (const sel of selectors) {
+      const content = page$(sel).html();
+      if (content && content.length > 500) {
+        articleHtml = content;
+        articleText = page$(sel).text().replace(/\s+/g, ' ').trim();
+        break;
+      }
+    }
+
+    // Get proper title from page if available
+    const pageTitle = page$('h1').first().text().trim() ||
+                     page$('meta[property="og:title"]').attr('content') ||
+                     page$('title').text().split('|')[0].trim() ||
+                     title;
+
+    if (articleText.length > 200) {
+      editions.push({
+        subject: cleanTitle(pageTitle),
+        url,
+        content: articleText,
+        htmlContent: articleHtml,
+        publishedAt,
+      });
+    } else {
+      console.log(`  [${config.name}] Skipped (content too short: ${articleText.length} chars)`);
+    }
+  }
+
+  console.log(`[${config.name}] Scraped ${editions.length} editions (skipped ${skippedOld} posts before 2018)`);
+  return editions;
+}
+
+// =============================================================================
 // NEWSLETTER CONFIGURATIONS
 // =============================================================================
 
@@ -727,6 +881,16 @@ const NEWSLETTERS: NewsletterConfig[] = [
     author: 'Alex',
     requiresBrowser: true, // Beehiiv may use JS
     scraper: scrapeAlexAndBooks,
+  },
+  {
+    name: 'Naval Ravikant',
+    senderEmail: 'naval@nav.al',
+    website: 'https://nav.al/',
+    archiveUrl: 'https://nav.al/archive',
+    category: 'wisdom',
+    author: 'Naval Ravikant',
+    requiresBrowser: true, // May need JS for full content
+    scraper: scrapeNaval,
   },
 ];
 
