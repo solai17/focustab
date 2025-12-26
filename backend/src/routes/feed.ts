@@ -532,7 +532,7 @@ async function getPersonalizedFeed(
   // Check if user is new (no preferences = cold start)
   const isNewUser = preferences.length === 0;
 
-  // Get bytes with a mix strategy
+  // Get bytes with a mix strategy - fetch more for diversity filtering
   const bytes = await prisma.contentByte.findMany({
     where: {
       id: { notIn: excludeIds },
@@ -548,37 +548,79 @@ async function getPersonalizedFeed(
       { engagementScore: 'desc' },
       { createdAt: 'desc' },
     ],
-    take: limit * 3, // Get more to sort/filter
+    take: limit * 5, // Get more to allow for diversity filtering
   });
 
-  // Score and sort by personalization
+  // Score and sort by personalization with randomness
   // For NEW users: rely heavily on qualityScore + engagementScore
   // For existing users: add category preferences
   const scoredBytes = bytes.map((byte) => {
     // Quality score from AI (0-1) - most important for new users
-    const qualityBoost = (byte.qualityScore || 0.5) * (isNewUser ? 0.5 : 0.25);
+    const qualityBoost = (byte.qualityScore || 0.5) * (isNewUser ? 0.4 : 0.2);
 
     // Engagement score from community (normalized)
     const maxEngagement = 100; // Normalize engagement
     const normalizedEngagement = Math.min(byte.engagementScore / maxEngagement, 1);
-    const engagementBoost = normalizedEngagement * (isNewUser ? 0.35 : 0.25);
+    const engagementBoost = normalizedEngagement * (isNewUser ? 0.3 : 0.2);
 
-    // Category preference (only for users with preferences)
-    const categoryWeight = isNewUser ? 0 : (categoryWeights.get(byte.category) || 0.5) * 0.3;
+    // Category preference (only for users with preferences) - reduced weight to prevent feedback loop
+    const categoryWeight = isNewUser ? 0 : (categoryWeights.get(byte.category) || 0.5) * 0.2;
 
     // Recency boost (newer content gets slight boost)
     const ageInDays = (Date.now() - byte.createdAt.getTime()) / (24 * 60 * 60 * 1000);
-    const recencyBoost = Math.max(0, (1 - ageInDays / 30)) * 0.15; // Decay over 30 days
+    const recencyBoost = Math.max(0, (1 - ageInDays / 30)) * 0.1; // Decay over 30 days
 
-    const personalScore = qualityBoost + engagementBoost + categoryWeight + recencyBoost;
+    // Randomness factor to break ties and prevent staleness (15-20% weight)
+    const randomBoost = Math.random() * 0.2;
 
-    return { byte, score: personalScore };
+    const personalScore = qualityBoost + engagementBoost + categoryWeight + recencyBoost + randomBoost;
+
+    return {
+      byte,
+      score: personalScore,
+      sourceId: byte.edition?.source?.id || 'unknown',
+      author: byte.author || byte.edition?.source?.name || 'unknown'
+    };
   });
 
   // Sort by personalized score
   scoredBytes.sort((a, b) => b.score - a.score);
 
-  return scoredBytes.slice(0, limit).map((s) => s.byte);
+  // Apply diversity filtering - limit any single source/author to max 2 per batch
+  const MAX_PER_SOURCE = 2;
+  const MAX_PER_AUTHOR = 2;
+  const sourceCount = new Map<string, number>();
+  const authorCount = new Map<string, number>();
+  const diverseResults: typeof scoredBytes = [];
+
+  for (const item of scoredBytes) {
+    if (diverseResults.length >= limit) break;
+
+    const currentSourceCount = sourceCount.get(item.sourceId) || 0;
+    const currentAuthorCount = authorCount.get(item.author) || 0;
+
+    // Skip if this source or author has already appeared too many times
+    if (currentSourceCount >= MAX_PER_SOURCE || currentAuthorCount >= MAX_PER_AUTHOR) {
+      continue;
+    }
+
+    // Add to results and update counts
+    diverseResults.push(item);
+    sourceCount.set(item.sourceId, currentSourceCount + 1);
+    authorCount.set(item.author, currentAuthorCount + 1);
+  }
+
+  // If we couldn't fill the limit due to diversity constraints, add remaining items
+  if (diverseResults.length < limit) {
+    for (const item of scoredBytes) {
+      if (diverseResults.length >= limit) break;
+      if (!diverseResults.includes(item)) {
+        diverseResults.push(item);
+      }
+    }
+  }
+
+  return diverseResults.map((s) => s.byte);
 }
 
 async function getQueueSize(userId: string, seenByteIds: string[]): Promise<number> {

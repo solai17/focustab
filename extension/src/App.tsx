@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Settings as SettingsIcon, Bookmark, BookmarkCheck, Copy, Check, ChevronDown, ChevronRight } from 'lucide-react';
+import { Settings as SettingsIcon, Bookmark, BookmarkCheck, ChevronDown, ChevronRight } from 'lucide-react';
 // Use the new logo from public folder
 const ByteLettersLogo = '/icons/icon128.png';
 import type { UserProfile, ContentByte, VoteValue } from './types';
@@ -53,7 +53,6 @@ function App() {
   const [queueSize, setQueueSize] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
-  const [emailCopied, setEmailCopied] = useState(false);
   const [showingCommunityBytes, setShowingCommunityBytes] = useState(false);
   const [communityBytes, setCommunityBytes] = useState<ContentByte[]>([]);
   const [communityByteIndex, setCommunityByteIndex] = useState(0);
@@ -146,18 +145,6 @@ function App() {
     }
   };
 
-  // Copy email to clipboard
-  const copyEmailToClipboard = async () => {
-    if (profile?.inboxEmail) {
-      try {
-        await navigator.clipboard.writeText(profile.inboxEmail);
-        setEmailCopied(true);
-        setTimeout(() => setEmailCopied(false), 2000);
-      } catch (error) {
-        console.error('Failed to copy email:', error);
-      }
-    }
-  };
 
   // Load community bytes when user opts in
   const loadCommunityBytes = async () => {
@@ -659,27 +646,6 @@ function App() {
           )}
         </div>
 
-        {/* Footer */}
-        <footer className="mt-12 text-center opacity-0 animate-fade-in animation-delay-500">
-          {profile.inboxEmail && (
-            <div className="flex items-center justify-center gap-2">
-              <p className="text-xs text-smoke/40">
-                <code className="text-life/50">{profile.inboxEmail}</code>
-              </p>
-              <button
-                onClick={copyEmailToClipboard}
-                className="p-1 rounded hover:bg-ash/30 transition-colors"
-                title="Copy email address"
-              >
-                {emailCopied ? (
-                  <Check className="w-3 h-3 text-life" />
-                ) : (
-                  <Copy className="w-3 h-3 text-smoke/40 hover:text-smoke" />
-                )}
-              </button>
-            </div>
-          )}
-        </footer>
       </main>
 
       {/* Settings Modal */}
