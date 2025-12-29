@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ByteLetters",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Your newsletters, distilled. Bite-sized wisdom in every new tab.",
   "permissions": [
     "storage",
@@ -16,6 +16,9 @@
       "profile"
     ]
   },
+  "background": {
+    "service_worker": "background.js"
+  },
   "chrome_url_overrides": {
     "newtab": "index.html"
   },
@@ -29,6 +32,6 @@
       "16": "icons/icon16.png",
       "48": "icons/icon48.png"
     },
-    "default_title": "ByteLetters"
+    "default_title": "ByteLetters - Open new tab"
   }
 }
