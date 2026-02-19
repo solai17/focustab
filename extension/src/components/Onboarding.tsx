@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowRight, Calendar, Mail, Copy, Check, Sparkles, AlertCircle } from 'lucide-react';
+import { ArrowRight, Calendar, Library, AlertCircle } from 'lucide-react';
 import type { UserProfile } from '../types';
 import { getChromeIdentity, authenticateWithGoogle, isExtensionWithIdentity } from '../services/auth';
 
@@ -11,9 +11,6 @@ export function Onboarding({ onComplete }: OnboardingProps) {
   const [step, setStep] = useState(1);
   const [name, setName] = useState('');
   const [birthDate, setBirthDate] = useState('');
-  const [inboxEmail, setInboxEmail] = useState('');
-  const [enableRecommendations, setEnableRecommendations] = useState(true);
-  const [copied, setCopied] = useState(false);
 
   // Chrome Identity state
   const [chromeIdentity, setChromeIdentity] = useState<{ email: string; id: string } | null>(null);
@@ -40,36 +37,29 @@ export function Onboarding({ onComplete }: OnboardingProps) {
     }
   };
 
-  const handleDateSubmit = (e: React.FormEvent) => {
+  const handleDateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (birthDate) {
-      setStep(3);
-    }
-  };
+    if (!birthDate) return;
 
-  const handleRecommendationsSubmit = async () => {
     setError(null);
     setIsCreatingAccount(true);
 
     try {
       if (chromeIdentity) {
-        const { user } = await authenticateWithGoogle(
+        // Create account with Google identity
+        // Backend auto-subscribes to all curated newsletters
+        await authenticateWithGoogle(
           chromeIdentity.email,
           chromeIdentity.id,
           {
             name: name.trim(),
             birthDate,
             lifeExpectancy: 80,
-            enableRecommendations,
+            enableRecommendations: true,
           }
         );
-        setInboxEmail(user.inboxEmail);
-      } else {
-        const slug = name.trim().toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10);
-        const random = Math.random().toString(36).substring(2, 8);
-        setInboxEmail(`${slug}-${random}@inbox.byteletters.app`);
       }
-      setStep(4);
+      setStep(3);
     } catch (err) {
       console.error('Account creation error:', err);
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
@@ -83,17 +73,10 @@ export function Onboarding({ onComplete }: OnboardingProps) {
       name: name.trim(),
       birthDate,
       lifeExpectancy: 80,
-      inboxEmail,
-      enableRecommendations,
+      enableRecommendations: true,
       createdAt: new Date().toISOString(),
     };
     onComplete(profile);
-  };
-
-  const copyEmail = async () => {
-    await navigator.clipboard.writeText(inboxEmail);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   };
 
   const firstName = name.split(' ')[0];
@@ -163,61 +146,6 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                 We'll calculate your remaining Sundays. You can adjust this anytime.
               </p>
             </div>
-            <button
-              type="submit"
-              disabled={!birthDate}
-              className="w-full py-3.5 px-4 bg-life text-void font-medium rounded-xl flex items-center justify-center gap-2 hover:bg-life/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-            >
-              Continue
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </form>
-        )}
-
-        {/* Step 3: Discovery */}
-        {step === 3 && (
-          <div className="animate-slide-up">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl text-pearl font-medium mb-2">
-                Expand your horizons?
-              </h2>
-              <p className="text-smoke">
-                Discover wisdom beyond your own newsletters.
-              </p>
-            </div>
-
-            <div className="p-5 bg-slate border border-ash rounded-xl mb-6">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <Sparkles className="w-5 h-5 text-life" />
-                  <div>
-                    <h3 className="text-pearl font-medium">Community picks</h3>
-                    <p className="text-sm text-smoke">
-                      See what resonates with others
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setEnableRecommendations(!enableRecommendations)}
-                  disabled={isCreatingAccount}
-                  className={`w-12 h-7 rounded-full transition-all flex items-center px-1 flex-shrink-0 ${
-                    enableRecommendations ? 'bg-life' : 'bg-ash'
-                  } ${isCreatingAccount ? 'opacity-50' : ''}`}
-                >
-                  <div
-                    className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${
-                      enableRecommendations ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
-              </div>
-            </div>
-
-            <p className="text-sm text-smoke/70 text-center mb-6">
-              {enableRecommendations
-                ? "You'll see curated content alongside your newsletters."
-                : "You'll only see content from your newsletters."}
-            </p>
 
             {/* Chrome Identity indicator */}
             {chromeIdentity && (
@@ -237,8 +165,8 @@ export function Onboarding({ onComplete }: OnboardingProps) {
             )}
 
             <button
-              onClick={handleRecommendationsSubmit}
-              disabled={isCreatingAccount}
+              type="submit"
+              disabled={!birthDate || isCreatingAccount}
               className="w-full py-3.5 px-4 bg-life text-void font-medium rounded-xl flex items-center justify-center gap-2 hover:bg-life/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               {isCreatingAccount ? (
@@ -253,69 +181,57 @@ export function Onboarding({ onComplete }: OnboardingProps) {
                 </>
               )}
             </button>
-          </div>
+          </form>
         )}
 
-        {/* Step 4: Your Inbox */}
-        {step === 4 && (
+        {/* Step 3: Welcome - Ready to go */}
+        {step === 3 && (
           <div className="animate-slide-up">
             <div className="text-center mb-8">
               <h2 className="text-2xl text-pearl font-medium mb-2">
-                You're all set
+                You're all set, {firstName}!
               </h2>
               <p className="text-smoke">
-                Forward newsletters to your personal inbox.
+                We've subscribed you to our curated newsletters.
               </p>
             </div>
 
-            <div className="mb-6">
-              <div className="flex items-center justify-center gap-2 text-smoke/60 text-sm mb-3">
-                <Mail className="w-4 h-4" />
-                Your inbox address
-              </div>
-              <div className="p-4 bg-slate border border-ash rounded-xl">
-                <div className="flex items-center justify-between gap-3">
-                  <code className="text-life text-sm break-all flex-1">{inboxEmail}</code>
-                  <button
-                    onClick={copyEmail}
-                    className="p-2 rounded-lg hover:bg-ash transition-colors flex-shrink-0"
-                    title="Copy to clipboard"
-                  >
-                    {copied ? (
-                      <Check className="w-4 h-4 text-life" />
-                    ) : (
-                      <Copy className="w-4 h-4 text-smoke" />
-                    )}
-                  </button>
+            <div className="p-5 bg-slate border border-ash rounded-xl mb-6">
+              <div className="flex items-center gap-3 mb-4">
+                <Library className="w-5 h-5 text-life" />
+                <div>
+                  <h3 className="text-pearl font-medium">Curated wisdom awaits</h3>
+                  <p className="text-sm text-smoke">
+                    Insights from the world's best newsletters
+                  </p>
                 </div>
               </div>
+              <p className="text-sm text-smoke/70">
+                Every new tab shows a bite-sized insight from newsletters like
+                Naval Ravikant, James Clear, Tim Ferriss, and more.
+              </p>
             </div>
 
             <div className="text-center mb-8">
               <p className="text-sm text-smoke">
-                We'll distill your newsletters into<br />
-                bite-sized wisdom for every new tab.
+                Use the <span className="text-life">Sources</span> button to customize<br />
+                which newsletters you see.
               </p>
-              {!chromeIdentity && (
-                <p className="text-xs text-smoke/50 mt-3">
-                  Sign in to Chrome to sync across devices.
-                </p>
-              )}
             </div>
 
             <button
               onClick={handleComplete}
               className="w-full py-3.5 px-4 bg-life text-void font-medium rounded-xl flex items-center justify-center gap-2 hover:bg-life/90 transition-all"
             >
-              Get started
+              Start exploring
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         )}
 
-        {/* Progress */}
+        {/* Progress - now 3 steps */}
         <div className="flex justify-center gap-2 mt-10">
-          {[1, 2, 3, 4].map((s) => (
+          {[1, 2, 3].map((s) => (
             <div
               key={s}
               className={`h-1.5 rounded-full transition-all ${
