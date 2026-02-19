@@ -1,22 +1,49 @@
-# FocusTab Production Deployment Guide
+# ByteLetters Production Deployment Guide
 
 ## Overview
 
-This guide covers deploying FocusTab to production with:
-- Secure user authentication via Chrome Identity
-- PostgreSQL database
-- Scalable API with rate limiting
-- Chrome extension with cross-device sync
+Complete guide for deploying ByteLetters v3.0 with:
+- Chrome extension with Sources screen
+- API server with admin dashboard
+- Cloudflare Email Workers for newsletter ingestion
+- PostgreSQL database on Supabase
+
+---
+
+## Architecture
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   Chrome Ext    │────▶│   Railway API   │────▶│    Supabase     │
+│  (Web Store)    │     │ api.byteletters │     │   PostgreSQL    │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+                               ▲
+                               │
+┌─────────────────┐     ┌──────┴──────────┐
+│ Cloudflare Email│────▶│ /webhooks/      │
+│    Workers      │     │ cloudflare      │
+└─────────────────┘     └─────────────────┘
+
+┌─────────────────┐
+│ Cloudflare Pages│
+│ byteletters.app │
+│ ├── index.html  │
+│ └── admin.html  │
+└─────────────────┘
+```
 
 ---
 
 ## 1. Prerequisites
 
 ### Required Accounts
-- **Google Cloud Console** - For Chrome extension OAuth
-- **Database Provider** - Supabase, Railway, Neon, or AWS RDS (PostgreSQL)
-- **Hosting Platform** - Railway, Render, Fly.io, or AWS/GCP
-- **Domain** - For production API and Mailgun
+| Service | Purpose | URL |
+|---------|---------|-----|
+| Google Cloud | Chrome Identity OAuth | console.cloud.google.com |
+| Supabase | PostgreSQL database | supabase.com |
+| Railway | API hosting | railway.app |
+| Cloudflare | Email Workers, Pages | cloudflare.com |
+| Chrome Developer | Extension publishing | chrome.google.com/webstore/devconsole |
 
 ### Required Tools
 ```bash
@@ -26,269 +53,365 @@ npm >= 9.0.0
 
 ---
 
-## 2. Google Cloud Setup (Chrome Identity)
+## 2. Database Setup (Supabase)
 
 ### Step 1: Create Project
-1. Go to [Google Cloud Console](https://console.cloud.google.com)
-2. Create a new project: "FocusTab"
-3. Enable the **Chrome Web Store API**
+1. Go to [supabase.com](https://supabase.com)
+2. Create new project in your preferred region
+3. Wait for database provisioning (~2 minutes)
 
-### Step 2: Configure OAuth Consent Screen
-1. Go to APIs & Services → OAuth consent screen
-2. Choose "External" user type
-3. Fill in app information:
-   - App name: FocusTab
-   - User support email: your email
-   - Developer contact: your email
+### Step 2: Get Connection String
+1. Go to **Settings → Database**
+2. Copy **Connection string** (URI format)
+3. Use "Transaction" pooler mode for serverless
 
-### Step 3: Create OAuth Client ID
-1. Go to APIs & Services → Credentials
-2. Create Credentials → OAuth client ID
-3. Application type: **Chrome Extension**
-4. Enter your extension ID (from chrome://extensions in developer mode)
-5. Copy the **Client ID**
-
-### Step 4: Update Extension Manifest
-In `extension/public/manifest.json`, replace:
-```json
-"oauth2": {
-  "client_id": "YOUR_ACTUAL_CLIENT_ID.apps.googleusercontent.com",
-  "scopes": ["openid", "email", "profile"]
-}
+```
+postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres
 ```
 
----
-
-## 3. Database Setup (PostgreSQL)
-
-### Option A: Supabase (Recommended for startups)
-1. Create account at [supabase.com](https://supabase.com)
-2. Create new project
-3. Go to Settings → Database → Connection string
-4. Copy the connection string (use "Transaction" mode for serverless)
-
-### Option B: Railway
-1. Create account at [railway.app](https://railway.app)
-2. New Project → Add PostgreSQL
-3. Copy the connection string from Variables tab
-
-### Option C: Neon (Serverless PostgreSQL)
-1. Create account at [neon.tech](https://neon.tech)
-2. Create new project
-3. Copy the connection string
-
-### Database URL Format
-```
-postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require
-```
-
----
-
-## 4. Backend Deployment
-
-### Step 1: Environment Variables
-Create production `.env`:
-```bash
-DATABASE_URL="postgresql://..."
-JWT_SECRET="$(openssl rand -base64 32)"
-CLAUDE_API_KEY="sk-ant-..."
-NODE_ENV=production
-PORT=3000
-```
-
-### Step 2: Run Database Migrations
+### Step 3: Run Migrations
 ```bash
 cd backend
-npm install
+export DATABASE_URL="postgresql://..."
 npx prisma migrate deploy
 npx prisma generate
 ```
 
-### Step 3: Deploy to Railway
+---
+
+## 3. Backend Deployment (Railway)
+
+### Step 1: Environment Variables
+
+Required environment variables:
+
+```env
+# Database
+DATABASE_URL="postgresql://..."
+
+# Authentication
+JWT_SECRET="$(openssl rand -base64 32)"
+
+# AI Processing
+ANTHROPIC_API_KEY="sk-ant-..."
+GOOGLE_AI_API_KEY="..."
+
+# Email Webhooks
+CLOUDFLARE_WEBHOOK_SECRET="your-webhook-secret"
+
+# Admin (comma-separated emails)
+ADMIN_EMAILS="your-email@gmail.com"
+
+# Environment
+NODE_ENV="production"
+PORT="3000"
+```
+
+### Step 2: Deploy to Railway
+
 ```bash
 # Install Railway CLI
 npm install -g @railway/cli
 
-# Login and deploy
+# Login
 railway login
+
+# Initialize project
+cd backend
 railway init
+
+# Set environment variables
+railway variables set DATABASE_URL="..."
+railway variables set JWT_SECRET="..."
+railway variables set ANTHROPIC_API_KEY="..."
+# ... set all variables
+
+# Deploy
 railway up
 ```
 
-### Step 4: Deploy to Render
-1. Connect GitHub repo
-2. Set environment variables
-3. Build command: `npm install && npx prisma generate`
-4. Start command: `npm start`
+### Step 3: Configure Domain
+1. Go to Railway dashboard → your service
+2. Settings → Domains
+3. Add custom domain: `api.byteletters.app`
+4. Update DNS records as instructed
 
-### Step 5: Deploy to Fly.io
+---
+
+## 4. Cloudflare Email Workers
+
+### Step 1: Deploy Worker
+
 ```bash
-# Install Fly CLI
-curl -L https://fly.io/install.sh | sh
+cd cloudflare-worker
+npm install
+
+# Set secrets
+npx wrangler secret put WEBHOOK_SECRET
+# Enter your CLOUDFLARE_WEBHOOK_SECRET value
 
 # Deploy
-fly launch
-fly secrets set DATABASE_URL="..."
-fly secrets set JWT_SECRET="..."
-fly deploy
+npm run deploy
 ```
 
----
+### Step 2: Configure Email Routing
 
-## 5. API Security Checklist
+1. Go to Cloudflare Dashboard → your domain
+2. **Email → Email Routing**
+3. Enable Email Routing
+4. Add routes:
 
-### ✅ Implemented
-- [x] Rate limiting (10/min auth, 100/min general, 200/min feed)
-- [x] JWT authentication with 30-day expiry
-- [x] Security headers (Helmet)
-- [x] CORS configuration
-- [x] Input validation
-- [x] SQL injection protection
-- [x] XSS protection
-- [x] Password hashing (bcrypt, cost 12)
+| Route | Action |
+|-------|--------|
+| `inbox@byteletters.app` | Worker: byteletters-email |
+| `*@inbox.byteletters.app` | Worker: byteletters-email |
 
-### 🔧 Production Recommendations
-- [ ] Add Redis for distributed rate limiting
-- [ ] Enable HTTPS only
-- [ ] Set up monitoring (Sentry, LogRocket)
-- [ ] Configure CDN (Cloudflare)
-- [ ] Set up database backups
-- [ ] Add API versioning (/v1/...)
+### Step 3: Verify DNS
+Cloudflare will add MX records automatically. Verify they're active.
 
 ---
 
-## 6. Extension Publishing
+## 5. Cloudflare Pages (Landing + Admin)
 
-### Step 1: Build Extension
+### Step 1: Deploy Landing Page
+
+```bash
+cd landing
+
+# Install Wrangler if needed
+npm install -g wrangler
+
+# Deploy
+npx wrangler pages deploy . --project-name=byteletters
+```
+
+### Step 2: Configure Domain
+1. Go to Cloudflare Dashboard → Pages → byteletters
+2. Custom domains → Add `byteletters.app`
+3. Follow DNS configuration
+
+### Files Deployed:
+- `index.html` — Landing page
+- `admin.html` — Admin dashboard
+- `privacy.html` — Privacy policy
+- `setup-guide.html` — User setup guide (legacy)
+
+---
+
+## 6. Chrome Extension
+
+### Step 1: Update Configuration
+
+Update `extension/public/manifest.json`:
+```json
+{
+  "oauth2": {
+    "client_id": "YOUR_ACTUAL_CLIENT_ID.apps.googleusercontent.com",
+    "scopes": ["openid", "email", "profile"]
+  }
+}
+```
+
+Update `extension/src/services/api.ts`:
+```typescript
+const API_BASE_URL = 'https://api.byteletters.app';
+```
+
+### Step 2: Build Extension
 ```bash
 cd extension
+npm install
 npm run build
 ```
 
-### Step 2: Package for Chrome Web Store
-1. Zip the `dist` folder
-2. Go to [Chrome Developer Dashboard](https://chrome.google.com/webstore/devconsole)
-3. Pay one-time $5 developer fee
-4. Upload zip file
-5. Fill in store listing details
+### Step 3: Create ZIP
+```bash
+cd dist
+zip -r ../byteletters-v1.1.0.zip .
+```
+
+### Step 4: Upload to Chrome Web Store
+1. Go to [Chrome Developer Dashboard](https://chrome.google.com/webstore/devconsole)
+2. Find ByteLetters → click to edit
+3. **Package** tab → Upload new package
+4. Upload `byteletters-v1.1.0.zip`
+5. Update version number in store listing
 6. Submit for review
 
-### Store Listing Tips
-- **Name**: FocusTab - Life, Goals & Wisdom
-- **Category**: Productivity
-- **Screenshots**: 1280x800 or 640x400
-- **Promo tile**: 440x280
-
 ---
 
-## 7. Environment Configuration
-
-### Development
-```env
-DATABASE_URL="postgresql://focustab:focustab123@localhost:5432/focustab"
-JWT_SECRET="dev-secret-not-for-production"
-NODE_ENV=development
-```
-
-### Production
-```env
-DATABASE_URL="postgresql://user:pass@prod-host:5432/focustab?sslmode=require"
-JWT_SECRET="<32+ char secure random string>"
-NODE_ENV=production
-```
-
----
-
-## 8. API Endpoints Reference
+## 7. API Endpoints Reference
 
 ### Authentication
-| Endpoint | Method | Auth | Rate Limit | Description |
-|----------|--------|------|------------|-------------|
-| `/auth/google` | POST | No | 10/min | Chrome Identity auth |
-| `/auth/signup` | POST | No | 10/min | Email/password signup |
-| `/auth/login` | POST | No | 10/min | Email/password login |
-| `/auth/me` | GET | Yes | 10/min | Get current user |
-| `/auth/profile` | PUT | Yes | 10/min | Update profile |
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/auth/google` | POST | No | Chrome Identity auth |
+| `/auth/me` | GET | Yes | Get current user |
+| `/auth/profile` | PUT | Yes | Update profile |
 
-### Feed (Requires Auth)
-| Endpoint | Method | Auth | Rate Limit | Description |
-|----------|--------|------|------------|-------------|
-| `/feed` | GET | Yes | 200/min | Get personalized feed |
-| `/feed/next` | GET | Yes | 200/min | Get next byte |
-| `/feed/bytes/:id/vote` | POST | Yes | 60/min | Vote on byte |
-| `/feed/bytes/:id/view` | POST | Yes | 200/min | Track view |
-| `/feed/saved` | GET | Yes | 100/min | Get saved bytes |
+### Feed
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/feed/next` | GET | Yes | Get next byte |
+| `/feed/saved` | GET | Yes | Get saved bytes |
+| `/feed/bytes/:id/vote` | POST | Yes | Vote on byte |
+| `/feed/bytes/:id/view` | POST | Yes | Track view |
+| `/feed/bytes/:id/save` | POST | Yes | Toggle save |
 
-### Discovery
-| Endpoint | Method | Auth | Rate Limit | Description |
-|----------|--------|------|------------|-------------|
-| `/discover/sources` | GET | Yes | 100/min | Browse sources |
-| `/discover/trending` | GET | Yes | 100/min | Trending content |
-| `/discover/onboarding` | GET | No | 100/min | Onboarding content |
+### Newsletters (v3.0)
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/newsletters` | GET | Yes | List curated sources |
+| `/newsletters/:id/subscribe` | POST | Yes | Subscribe |
+| `/newsletters/:id/unsubscribe` | POST | Yes | Unsubscribe |
+
+### Admin (v3.0)
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/admin/stats` | GET | Admin | Dashboard stats |
+| `/admin/sources` | GET/POST | Admin | Manage sources |
+| `/admin/insights` | GET | Admin | Moderation queue |
+| `/admin/insights/:id/moderate` | POST | Admin | Approve/reject |
+| `/admin/forwarded` | GET | Admin | Forwarded emails |
+| `/admin/scrape/trigger` | POST | Admin | Trigger scrape |
+
+### Webhooks
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/webhooks/cloudflare` | POST | Secret | Email ingestion |
 
 ---
 
-## 9. Scaling Considerations
+## 8. Admin Dashboard
 
-### Database
-- Use connection pooling (PgBouncer or Prisma Data Proxy)
-- Add read replicas for high traffic
-- Index frequently queried columns (already done in schema)
+### Access
+1. Go to `https://byteletters.app/admin.html`
+2. Sign in with Google (must be in ADMIN_EMAILS list)
+3. Dashboard loads with full management capabilities
 
-### API
-- Deploy multiple instances behind load balancer
-- Use Redis for rate limiting across instances
-- Cache popular content (trending, discovery)
+### Features
+- **Overview**: User count, source count, insights, pending moderation
+- **Sources**: Add newsletters with archive URLs, configure scraping
+- **Insights**: Approve/reject AI-extracted content
+- **Forwarded**: Review emails sent to `inbox@byteletters.app`
+- **Scraping**: Monitor scrape jobs, trigger manual scrapes
 
-### Estimated Capacity (Single Instance)
-- ~1000 concurrent users
-- ~100 requests/second
-- Scale horizontally as needed
+---
+
+## 9. Security Checklist
+
+### Implemented
+- [x] JWT authentication (30-day expiry)
+- [x] Rate limiting per route
+- [x] CORS configuration
+- [x] Security headers (Helmet)
+- [x] Admin whitelist authentication
+- [x] Webhook secret verification
+- [x] Input validation
+- [x] SQL injection protection (Prisma)
+
+### Recommendations
+- [ ] Enable Redis for distributed rate limiting
+- [ ] Set up error monitoring (Sentry)
+- [ ] Configure database backups
+- [ ] Add API versioning (/v1/...)
+- [ ] Enable CDN caching for static responses
 
 ---
 
 ## 10. Monitoring & Maintenance
 
 ### Recommended Tools
-- **Error Tracking**: Sentry
-- **Logging**: Papertrail, LogDNA
-- **Uptime**: UptimeRobot, Pingdom
-- **Analytics**: PostHog, Mixpanel
+| Category | Tool |
+|----------|------|
+| Error Tracking | Sentry |
+| Logging | Papertrail, LogDNA |
+| Uptime | UptimeRobot |
+| Analytics | PostHog, Mixpanel |
 
 ### Database Maintenance
 ```bash
-# Vacuum and analyze (run weekly)
+# Weekly vacuum (Supabase does this automatically)
 psql $DATABASE_URL -c "VACUUM ANALYZE;"
 
 # Check table sizes
-psql $DATABASE_URL -c "SELECT relname, pg_size_pretty(pg_total_relation_size(relid)) FROM pg_catalog.pg_statio_user_tables ORDER BY pg_total_relation_size(relid) DESC;"
+psql $DATABASE_URL -c "
+SELECT relname, pg_size_pretty(pg_total_relation_size(relid))
+FROM pg_catalog.pg_statio_user_tables
+ORDER BY pg_total_relation_size(relid) DESC;
+"
+```
+
+### Log Monitoring
+```bash
+# Railway logs
+railway logs
+
+# Cloudflare Worker logs
+npx wrangler tail
 ```
 
 ---
 
-## Quick Start Commands
+## 11. Troubleshooting
 
+### Common Issues
+
+**Extension not loading bytes**
+1. Check API is reachable: `curl https://api.byteletters.app/health`
+2. Verify user has subscriptions in Sources
+3. Check browser console for errors
+
+**Admin dashboard not loading**
+1. Verify your email is in ADMIN_EMAILS
+2. Check API authentication working
+3. Clear browser cache and re-authenticate
+
+**Emails not being processed**
+1. Check Cloudflare Email Routing is active
+2. Verify webhook secret matches
+3. Check Railway logs for webhook errors
+
+**Scraping failing**
+1. Check archive URL is accessible
+2. Verify Puppeteer dependencies installed
+3. Check for rate limiting from source
+
+---
+
+## 12. Quick Reference
+
+### Deploy Commands
 ```bash
-# Clone and setup
-git clone <repo>
-cd focustab/backend
+# Backend (Railway)
+cd backend && railway up
 
-# Install dependencies
-npm install
+# Cloudflare Worker
+cd cloudflare-worker && npm run deploy
 
-# Setup database
-export DATABASE_URL="postgresql://..."
-npx prisma migrate deploy
-npx prisma generate
+# Landing Page
+cd landing && npx wrangler pages deploy .
 
-# Start production server
-NODE_ENV=production npm start
+# Extension
+cd extension && npm run build
+# Upload dist/ to Chrome Web Store
+```
+
+### Environment Variables Summary
+```env
+DATABASE_URL=postgresql://...
+JWT_SECRET=<random-32-chars>
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_AI_API_KEY=...
+CLOUDFLARE_WEBHOOK_SECRET=...
+ADMIN_EMAILS=admin@example.com
+NODE_ENV=production
 ```
 
 ---
 
 ## Support
 
-For issues or questions:
-- GitHub Issues: [repo]/issues
-- Documentation: [docs-url]
+- **Documentation**: See ARCHITECTURE.md
+- **Issues**: GitHub Issues
+- **Email**: hello@byteletters.app
