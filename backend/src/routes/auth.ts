@@ -2,9 +2,41 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import prisma from '../services/db';
 import { generateToken, authenticateToken } from '../middleware/auth';
-import { generateInboxEmail } from '../services/utils';
 import { SignupInput, LoginInput, AuthenticatedRequest } from '../types';
 import { rateLimits } from '../middleware/security';
+
+/**
+ * Auto-subscribe a new user to all curated newsletters
+ */
+async function subscribeToAllCurated(userId: string): Promise<void> {
+  try {
+    const curatedSources = await prisma.newsletterSource.findMany({
+      where: { isCurated: true },
+      select: { id: true },
+    });
+
+    if (curatedSources.length > 0) {
+      await prisma.userSubscription.createMany({
+        data: curatedSources.map((s) => ({
+          userId,
+          sourceId: s.id,
+          isActive: true,
+          discoveryMethod: 'onboarding',
+        })),
+        skipDuplicates: true,
+      });
+
+      // Update subscriber counts
+      await prisma.newsletterSource.updateMany({
+        where: { id: { in: curatedSources.map((s) => s.id) } },
+        data: { subscriberCount: { increment: 1 } },
+      });
+    }
+  } catch (error) {
+    console.error('Auto-subscribe error:', error);
+    // Non-fatal - don't block user creation
+  }
+}
 
 const router = Router();
 
@@ -59,18 +91,7 @@ router.post('/google', async (req: Request, res: Response) => {
           updateData.onboardingCompleted = true;
         }
 
-        // Regenerate inbox email if user is providing their actual name for the first time
-        // This fixes the issue where inbox email was created from email prefix before onboarding
-        if (name && user.inboxEmail) {
-          const emailPrefix = googleEmail.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-          const currentInboxPrefix = user.inboxEmail.split('@')[0].split('-')[0];
-
-          // If current inbox email starts with the email prefix (not the user's chosen name), regenerate it
-          if (currentInboxPrefix === emailPrefix || currentInboxPrefix === emailPrefix.slice(0, 15)) {
-            const newInboxEmail = await generateInboxEmail(name);
-            updateData.inboxEmail = newInboxEmail;
-          }
-        }
+        // Note: inboxEmail deprecated in v3.0 - no longer regenerated
 
         if (Object.keys(updateData).length > 0) {
           user = await prisma.user.update({
@@ -80,9 +101,7 @@ router.post('/google', async (req: Request, res: Response) => {
         }
       }
     } else {
-      // New user - create account
-      const inboxEmail = await generateInboxEmail(name || googleEmail.split('@')[0]);
-
+      // New user - create account (no inboxEmail in v3.0 - curated content only)
       user = await prisma.user.create({
         data: {
           email: googleEmail.toLowerCase(),
@@ -92,10 +111,12 @@ router.post('/google', async (req: Request, res: Response) => {
           birthDate: birthDate ? new Date(birthDate) : null,
           lifeExpectancy: lifeExpectancy || 80,
           enableRecommendations: enableRecommendations ?? true,
-          inboxEmail,
           onboardingCompleted: !!(name && birthDate),
         },
       });
+
+      // Auto-subscribe new user to all curated newsletters
+      await subscribeToAllCurated(user.id);
     }
 
     // Generate token
@@ -160,20 +181,19 @@ router.post('/signup', async (req: Request, res: Response) => {
     // Hash password with high cost factor
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // Generate unique inbox email
-    const inboxEmail = await generateInboxEmail(name);
-
-    // Create user
+    // Create user (no inboxEmail in v3.0 - curated content only)
     const user = await prisma.user.create({
       data: {
         email: email.toLowerCase(),
         passwordHash,
         name,
         birthDate: new Date(birthDate),
-        inboxEmail,
         onboardingCompleted: true,
       },
     });
+
+    // Auto-subscribe new user to all curated newsletters
+    await subscribeToAllCurated(user.id);
 
     // Generate token
     const token = generateToken({ userId: user.id, email: user.email });

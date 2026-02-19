@@ -88,7 +88,45 @@ router.post('/cloudflare', async (req: Request, res: Response) => {
       console.log(`[Cloudflare] Low confidence classification, will process with caution`);
     }
 
-    // Find user by inbox email
+    // v3.0: Check if this is the generic inbox for admin review
+    const GENERIC_INBOX = 'inbox@byteletters.app';
+    if (recipientEmail === GENERIC_INBOX || recipientEmail === 'inbox@inbox.byteletters.app') {
+      // Save to forwarded emails for admin review
+      const contentHash = generateContentHash(finalSubject, finalTextContent);
+
+      // Check for duplicate
+      const existing = await prisma.forwardedEmail.findUnique({
+        where: { contentHash },
+      });
+
+      if (existing) {
+        console.log(`[Cloudflare] Duplicate forwarded email: ${contentHash}`);
+        res.status(200).json({ message: 'Duplicate email', isDuplicate: true });
+        return;
+      }
+
+      // Save for admin review
+      const forwardedEmail = await prisma.forwardedEmail.create({
+        data: {
+          fromEmail: senderEmail,
+          fromName: finalSenderName,
+          subject: finalSubject,
+          contentHash,
+          htmlContent: htmlContent || null,
+          textContent: finalTextContent,
+          status: 'pending',
+        },
+      });
+
+      console.log(`[Cloudflare] Forwarded email saved for review: ${forwardedEmail.id}`);
+      res.status(200).json({
+        message: 'Email received for review',
+        forwardedEmailId: forwardedEmail.id,
+      });
+      return;
+    }
+
+    // Legacy: Find user by personal inbox email (for existing users)
     const user = await prisma.user.findUnique({
       where: { inboxEmail: recipientEmail },
     });

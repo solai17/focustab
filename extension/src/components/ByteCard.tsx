@@ -8,8 +8,6 @@ import {
   CheckCircle,
   Sparkles,
   ExternalLink,
-  Copy,
-  Check,
 } from 'lucide-react';
 import type { ContentByte, VoteValue } from '../types';
 
@@ -21,8 +19,6 @@ interface ByteCardProps {
   onNext: () => void;
   onView: (byteId: string, dwellTimeMs: number, isRead: boolean) => void;
   queueSize: number;
-  isCommunityContent?: boolean;
-  inboxEmail?: string;
 }
 
 export function ByteCard({
@@ -33,13 +29,10 @@ export function ByteCard({
   onNext,
   onView,
   queueSize,
-  isCommunityContent = false,
-  inboxEmail,
 }: ByteCardProps) {
   const [localVote, setLocalVote] = useState<VoteValue>(0);
   const [localSaved, setLocalSaved] = useState(false);
   const [showShareToast, setShowShareToast] = useState(false);
-  const [emailCopied, setEmailCopied] = useState(false);
   const viewStartTime = useRef(Date.now());
   const isReadRef = useRef(false);
   const readTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -47,19 +40,6 @@ export function ByteCard({
   const lastActiveTimestamp = useRef(Date.now());
 
   const READ_THRESHOLD_MS = 5000; // 5 seconds of active tab time = read
-
-  // Copy email to clipboard
-  const copyEmailToClipboard = async () => {
-    if (inboxEmail) {
-      try {
-        await navigator.clipboard.writeText(inboxEmail);
-        setEmailCopied(true);
-        setTimeout(() => setEmailCopied(false), 2000);
-      } catch (error) {
-        console.error('Failed to copy email:', error);
-      }
-    }
-  };
 
   // Reset state when byte changes
   useEffect(() => {
@@ -288,48 +268,13 @@ export function ByteCard({
         </div>
       </div>
 
-      {/* Queue Indicator / Community Content CTA */}
-      <div className="flex items-center justify-center mt-4 gap-2 text-smoke text-sm">
-        {isCommunityContent ? (
-          <div className="text-center px-4 py-3 bg-slate/30 rounded-lg border border-ash/20">
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <Sparkles className="w-4 h-4 text-life" />
-              <span className="text-pearl font-medium">Get personalized insights from your newsletters</span>
-            </div>
-            <a
-              href="https://www.byteletters.app/setup-guide.html"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-smoke/80 text-xs hover:text-life transition-colors underline underline-offset-2"
-            >
-              One-time email forwarding setup →
-            </a>
-            {inboxEmail && (
-              <div className="flex items-center justify-center gap-2 mt-3">
-                <code className="text-life text-xs bg-void/50 px-3 py-1 rounded-md">
-                  {inboxEmail}
-                </code>
-                <button
-                  onClick={copyEmailToClipboard}
-                  className="p-1.5 rounded-md hover:bg-ash/30 transition-colors"
-                  title="Copy email address"
-                >
-                  {emailCopied ? (
-                    <Check className="w-3.5 h-3.5 text-life" />
-                  ) : (
-                    <Copy className="w-3.5 h-3.5 text-smoke/60 hover:text-smoke" />
-                  )}
-                </button>
-              </div>
-            )}
-          </div>
-        ) : queueSize > 0 ? (
-          <>
-            <Sparkles className="w-4 h-4" />
-            <span>{queueSize} more bytes waiting</span>
-          </>
-        ) : null}
-      </div>
+      {/* Queue Indicator */}
+      {queueSize > 0 && (
+        <div className="flex items-center justify-center mt-4 gap-2 text-smoke text-sm">
+          <Sparkles className="w-4 h-4" />
+          <span>{queueSize} more bytes waiting</span>
+        </div>
+      )}
 
       {/* Share Toast */}
       {showShareToast && (

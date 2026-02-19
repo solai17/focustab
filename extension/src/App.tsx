@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Settings as SettingsIcon, Bookmark, BookmarkCheck, ChevronDown, ChevronRight } from 'lucide-react';
+import { Settings as SettingsIcon, Bookmark, BookmarkCheck, ChevronDown, ChevronRight, Library } from 'lucide-react';
 // Use the new logo from public folder
 const ByteLettersLogo = '/icons/icon128.png';
 import type { UserProfile, ContentByte, VoteValue } from './types';
@@ -21,7 +21,6 @@ import {
 import {
   fetchNextByte,
   fetchSavedBytes,
-  fetchPopularBytes,
   voteByte,
   toggleSaveByte,
   trackByteView,
@@ -31,6 +30,7 @@ import { MortalityBar } from './components/MortalityBar';
 import { ByteCard } from './components/ByteCard';
 import { Onboarding } from './components/Onboarding';
 import { Settings } from './components/Settings';
+import { Sources } from './components/Sources';
 
 // Convert backend user to local profile format
 function userToProfile(user: AuthUser): UserProfile {
@@ -53,15 +53,16 @@ function App() {
   const [queueSize, setQueueSize] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
-  const [showingCommunityBytes, setShowingCommunityBytes] = useState(false);
-  const [communityBytes, setCommunityBytes] = useState<ContentByte[]>([]);
+  const [showSources, setShowSources] = useState(false);
+  const [showingCommunityBytes] = useState(false);
+  const [communityBytes] = useState<ContentByte[]>([]);
   const [communityByteIndex, setCommunityByteIndex] = useState(0);
   // Saved bytes panel state
   const [groupByCategory, setGroupByCategory] = useState(false);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
-  // Track content source info from API
-  const [isCommunityContent, setIsCommunityContent] = useState(true);
-  const [_hasUserSubscriptions, setHasUserSubscriptions] = useState(false);
+  // Track content source info from API (unused in new curated model, kept for API compat)
+  const [, setIsCommunityContent] = useState(true);
+  const [, setHasUserSubscriptions] = useState(false);
   // Track if using mock data (offline fallback)
   const usingMockData = useRef(false);
 
@@ -142,34 +143,6 @@ function App() {
           });
         }
       }
-    }
-  };
-
-
-  // Load community bytes when user opts in
-  const loadCommunityBytes = async () => {
-    try {
-      const popular = await fetchPopularBytes(20);
-      if (popular.length > 0) {
-        setCommunityBytes(popular);
-        setCurrentByte(popular[0]);
-        setCommunityByteIndex(0);
-        setShowingCommunityBytes(true);
-        setQueueSize(popular.length - 1);
-      } else {
-        // Fall back to mock data if no community bytes
-        usingMockData.current = true;
-        const byte = getNextMockByte();
-        setCurrentByte(byte);
-        setQueueSize(SAMPLE_BYTES.length);
-      }
-    } catch (error) {
-      console.error('Failed to load community bytes:', error);
-      // Fall back to mock data
-      usingMockData.current = true;
-      const byte = getNextMockByte();
-      setCurrentByte(byte);
-      setQueueSize(SAMPLE_BYTES.length);
     }
   };
 
@@ -566,6 +539,15 @@ function App() {
             )}
           </button>
 
+          {/* Sources button */}
+          <button
+            onClick={() => setShowSources(true)}
+            className="p-3 rounded-xl bg-slate/50 border border-ash/50 hover:bg-ash transition-colors"
+            title="Newsletter Sources"
+          >
+            <Library className="w-5 h-5 text-smoke" />
+          </button>
+
           {/* Settings button */}
           <button
             onClick={() => setShowSettings(true)}
@@ -597,51 +579,22 @@ function App() {
               onNext={handleNext}
               onView={handleView}
               queueSize={queueSize}
-              isCommunityContent={isCommunityContent || showingCommunityBytes || usingMockData.current}
-              inboxEmail={profile.inboxEmail}
             />
           ) : (
             <div className="text-center py-16 bg-obsidian/80 backdrop-blur-sm rounded-2xl p-8 border border-ash/30">
-              <p className="text-pearl text-lg mb-2">Your feed is empty</p>
-              <p className="text-smoke/60 text-sm mb-4">
-                Forward your favorite newsletters to start receiving personalized bytes.
+              <Library className="w-12 h-12 text-life/50 mx-auto mb-4" />
+              <p className="text-pearl text-lg mb-2">All caught up!</p>
+              <p className="text-smoke/60 text-sm mb-6">
+                Subscribe to more newsletters in Sources to see more insights.
               </p>
 
-              {profile.inboxEmail && (
-                <div className="mb-6 p-3 bg-slate/50 rounded-lg border border-ash/30">
-                  <p className="text-smoke/70 text-xs mb-2">Forward newsletters to:</p>
-                  <code className="text-life text-sm select-all">{profile.inboxEmail}</code>
-                </div>
-              )}
-
-              {!profile.enableRecommendations ? (
-                <div className="border-t border-ash/30 pt-6">
-                  <p className="text-smoke/70 text-sm mb-4">
-                    Community picks are turned off.
-                  </p>
-                  <button
-                    onClick={() => {
-                      const updatedProfile = { ...profile, enableRecommendations: true };
-                      handleUpdateProfile(updatedProfile);
-                    }}
-                    className="px-6 py-3 bg-life/20 hover:bg-life/30 text-life rounded-lg transition-colors font-medium"
-                  >
-                    Turn on community picks
-                  </button>
-                </div>
-              ) : (
-                <div className="border-t border-ash/30 pt-6">
-                  <p className="text-smoke text-sm mb-4">
-                    Or explore wisdom from the community
-                  </p>
-                  <button
-                    onClick={loadCommunityBytes}
-                    className="px-6 py-3 bg-life/20 hover:bg-life/30 text-life rounded-lg transition-colors font-medium"
-                  >
-                    Show Community Bytes
-                  </button>
-                </div>
-              )}
+              <button
+                onClick={() => setShowSources(true)}
+                className="px-6 py-3 bg-life hover:bg-life/90 text-void rounded-lg transition-colors font-medium flex items-center gap-2 mx-auto"
+              >
+                <Library className="w-5 h-5" />
+                Browse Sources
+              </button>
             </div>
           )}
         </div>
@@ -656,6 +609,11 @@ function App() {
           onUpdate={handleUpdateProfile}
           onReset={handleReset}
         />
+      )}
+
+      {/* Sources Modal */}
+      {showSources && (
+        <Sources onClose={() => setShowSources(false)} />
       )}
 
       {/* Saved Bytes Slide Panel */}
