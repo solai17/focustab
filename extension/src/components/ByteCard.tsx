@@ -8,8 +8,6 @@ import {
   CheckCircle,
   Sparkles,
   ExternalLink,
-  Copy,
-  Check,
 } from 'lucide-react';
 import type { ContentByte, VoteValue } from '../types';
 
@@ -19,10 +17,8 @@ interface ByteCardProps {
   onSave: (byteId: string) => void;
   onShare: (byteId: string) => void;
   onNext: () => void;
-  onView: (byteId: string, dwellTimeMs: number) => void;
+  onView: (byteId: string, dwellTimeMs: number, isRead: boolean) => void;
   queueSize: number;
-  isCommunityContent?: boolean;
-  inboxEmail?: string;
 }
 
 export function ByteCard({
@@ -33,41 +29,77 @@ export function ByteCard({
   onNext,
   onView,
   queueSize,
-  isCommunityContent = false,
-  inboxEmail,
 }: ByteCardProps) {
   const [localVote, setLocalVote] = useState<VoteValue>(0);
   const [localSaved, setLocalSaved] = useState(false);
   const [showShareToast, setShowShareToast] = useState(false);
-  const [emailCopied, setEmailCopied] = useState(false);
   const viewStartTime = useRef(Date.now());
+  const isReadRef = useRef(false);
+  const readTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeTimeRef = useRef(0); // Accumulated active time in ms
+  const lastActiveTimestamp = useRef(Date.now());
 
-  // Copy email to clipboard
-  const copyEmailToClipboard = async () => {
-    if (inboxEmail) {
-      try {
-        await navigator.clipboard.writeText(inboxEmail);
-        setEmailCopied(true);
-        setTimeout(() => setEmailCopied(false), 2000);
-      } catch (error) {
-        console.error('Failed to copy email:', error);
-      }
-    }
-  };
+  const READ_THRESHOLD_MS = 5000; // 5 seconds of active tab time = read
 
-  // Reset state when byte changes (fixes issue #2)
+  // Reset state when byte changes
   useEffect(() => {
     setLocalVote((byte.userEngagement?.vote as VoteValue) || 0);
     setLocalSaved(byte.userEngagement?.isSaved || false);
     viewStartTime.current = Date.now();
+    isReadRef.current = false;
+    activeTimeRef.current = 0;
+    lastActiveTimestamp.current = Date.now();
   }, [byte.id]);
 
-  // Track view time when unmounting or navigating away
+  // Track tab visibility to determine if user actually read the byte
   useEffect(() => {
+    const startReadTimer = () => {
+      // Calculate remaining time needed to hit threshold
+      const remaining = READ_THRESHOLD_MS - activeTimeRef.current;
+      if (remaining <= 0 || isReadRef.current) return;
+
+      lastActiveTimestamp.current = Date.now();
+      readTimerRef.current = setTimeout(() => {
+        isReadRef.current = true;
+        // Immediately send read signal so backend knows even if tab stays open
+        const dwellTime = Date.now() - viewStartTime.current;
+        onView(byte.id, dwellTime, true);
+      }, remaining);
+    };
+
+    const pauseReadTimer = () => {
+      if (readTimerRef.current) {
+        clearTimeout(readTimerRef.current);
+        readTimerRef.current = null;
+      }
+      // Accumulate the active time so far
+      activeTimeRef.current += Date.now() - lastActiveTimestamp.current;
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        startReadTimer();
+      } else {
+        pauseReadTimer();
+      }
+    };
+
+    // Start tracking if tab is already visible
+    if (document.visibilityState === 'visible') {
+      startReadTimer();
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (readTimerRef.current) {
+        clearTimeout(readTimerRef.current);
+      }
+      // Send final dwell time on unmount (byte change or navigation)
       const dwellTime = Date.now() - viewStartTime.current;
       if (dwellTime > 1000) {
-        onView(byte.id, dwellTime);
+        onView(byte.id, dwellTime, isReadRef.current);
       }
     };
   }, [byte.id, onView]);
@@ -236,48 +268,13 @@ export function ByteCard({
         </div>
       </div>
 
-      {/* Queue Indicator / Community Content CTA */}
-      <div className="flex items-center justify-center mt-4 gap-2 text-smoke text-sm">
-        {isCommunityContent ? (
-          <div className="text-center px-4 py-3 bg-slate/30 rounded-lg border border-ash/20">
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <Sparkles className="w-4 h-4 text-life" />
-              <span className="text-pearl font-medium">Get personalized insights from your newsletters</span>
-            </div>
-            <a
-              href="https://www.byteletters.app/setup-guide.html"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-smoke/80 text-xs hover:text-life transition-colors underline underline-offset-2"
-            >
-              One-time email forwarding setup →
-            </a>
-            {inboxEmail && (
-              <div className="flex items-center justify-center gap-2 mt-3">
-                <code className="text-life text-xs bg-void/50 px-3 py-1 rounded-md">
-                  {inboxEmail}
-                </code>
-                <button
-                  onClick={copyEmailToClipboard}
-                  className="p-1.5 rounded-md hover:bg-ash/30 transition-colors"
-                  title="Copy email address"
-                >
-                  {emailCopied ? (
-                    <Check className="w-3.5 h-3.5 text-life" />
-                  ) : (
-                    <Copy className="w-3.5 h-3.5 text-smoke/60 hover:text-smoke" />
-                  )}
-                </button>
-              </div>
-            )}
-          </div>
-        ) : queueSize > 0 ? (
-          <>
-            <Sparkles className="w-4 h-4" />
-            <span>{queueSize} more bytes waiting</span>
-          </>
-        ) : null}
-      </div>
+      {/* Queue Indicator */}
+      {queueSize > 0 && (
+        <div className="flex items-center justify-center mt-4 gap-2 text-smoke text-sm">
+          <Sparkles className="w-4 h-4" />
+          <span>{queueSize} more bytes waiting</span>
+        </div>
+      )}
 
       {/* Share Toast */}
       {showShareToast && (

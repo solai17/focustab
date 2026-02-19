@@ -34,15 +34,23 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
     const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
     const cursor = req.query.cursor as string | undefined;
 
-    // Get user for personalization
+    // Get user for personalization with history and engagements
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
         preferences: true,
         contentHistory: {
+          where: { isRead: true }, // Only exclude bytes that were actually read
           select: { byteId: true },
-          orderBy: { shownAt: 'desc' },
-          take: 500, // Last 500 seen bytes for filtering
+        },
+        engagements: {
+          where: {
+            OR: [
+              { vote: { not: 0 } }, // User voted (liked or disliked)
+              { isSaved: true },     // User saved/bookmarked
+            ],
+          },
+          select: { byteId: true },
         },
       },
     });
@@ -51,8 +59,10 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Get IDs of content user has already seen
-    const seenByteIds = user.contentHistory.map((h) => h.byteId);
+    // Exclude bytes that user has read OR interacted with (voted/saved)
+    const readByteIds = user.contentHistory.map((h) => h.byteId);
+    const interactedByteIds = user.engagements.map((e) => e.byteId);
+    const seenByteIds = [...new Set([...readByteIds, ...interactedByteIds])];
 
     // Build query based on feed type
     let bytes;
@@ -99,24 +109,32 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
 /**
  * GET /feed/next
  * Get single next byte for new tab experience
+ * v3.0: Only shows bytes from user's subscribed curated sources
  */
 router.get('/next', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.userId!;
 
-    // Get user with preferences, history, and subscriptions
+    // Get user with history, subscriptions, and engagements
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
-        preferences: true,
         contentHistory: {
+          where: { isRead: true }, // Only exclude bytes that were actually read
           select: { byteId: true },
-          orderBy: { shownAt: 'desc' },
-          take: 100,
         },
         subscriptions: {
           where: { isActive: true },
           select: { sourceId: true },
+        },
+        engagements: {
+          where: {
+            OR: [
+              { vote: { not: 0 } }, // User voted (liked or disliked)
+              { isSaved: true },     // User saved/bookmarked
+            ],
+          },
+          select: { byteId: true },
         },
       },
     });
@@ -125,59 +143,42 @@ router.get('/next', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const seenByteIds = user.contentHistory.map((h) => h.byteId);
+    // Exclude bytes that user has read OR interacted with (voted/saved)
+    const readByteIds = user.contentHistory.map((h) => h.byteId);
+    const interactedByteIds = user.engagements.map((e) => e.byteId);
+    const seenByteIds = [...new Set([...readByteIds, ...interactedByteIds])];
     const userSourceIds = user.subscriptions.map((s) => s.sourceId);
     const hasUserSubscriptions = userSourceIds.length > 0;
 
-    // If user disabled recommendations and has no subscriptions, return empty
-    if (!user.enableRecommendations && !hasUserSubscriptions) {
+    // v3.0: Users must subscribe to sources to see content
+    if (!hasUserSubscriptions) {
       return res.json({
         byte: null,
         queueSize: 0,
         hasUserSubscriptions: false,
-        isCommunityContent: false,
+        message: 'Subscribe to newsletters in Sources to see content',
       });
     }
 
-    // Get one personalized byte
-    const bytes = await getPersonalizedFeed(
-      userId,
-      seenByteIds,
-      user.preferences,
-      user.enableRecommendations,
-      1
-    );
+    // Get one byte from subscribed sources (curated content only)
+    const bytes = await getCuratedFeed(userId, seenByteIds, userSourceIds, 1);
 
     if (bytes.length === 0) {
-      // Fall back to popular if no personalized content
-      if (!user.enableRecommendations) {
-        // User disabled recommendations, don't show popular
-        return res.json({
-          byte: null,
-          queueSize: 0,
-          hasUserSubscriptions,
-          isCommunityContent: false,
-        });
-      }
-
-      const popularBytes = await getPopularFeed(userId, [], 1);
-      if (popularBytes.length === 0) {
-        return res.json({ byte: null, queueSize: 0, hasUserSubscriptions, isCommunityContent: false });
-      }
+      // No more unread content from subscribed sources
       return res.json({
-        byte: formatByteResponse(popularBytes[0], userId),
-        queueSize: await getQueueSize(userId, seenByteIds),
+        byte: null,
+        queueSize: 0,
         hasUserSubscriptions,
-        isCommunityContent: true, // Popular feed is always community content
+        message: 'All caught up! Check back later for new insights.',
       });
     }
 
-    // Record that we're showing this byte
+    // Record that we're showing this byte (isRead stays false until user actually reads it)
     await prisma.contentHistory.upsert({
       where: {
         userId_byteId: { userId, byteId: bytes[0].id },
       },
-      create: { userId, byteId: bytes[0].id },
+      create: { userId, byteId: bytes[0].id, isRead: false },
       update: { shownAt: new Date() },
     });
 
@@ -187,9 +188,8 @@ router.get('/next', async (req: AuthenticatedRequest, res: Response) => {
 
     res.json({
       byte: formatByteResponse(bytes[0], userId),
-      queueSize: await getQueueSize(userId, seenByteIds),
+      queueSize: await getQueueSize(userId, seenByteIds, userSourceIds),
       hasUserSubscriptions,
-      isCommunityContent: !isFromUserSubscription,
     });
   } catch (error) {
     console.error('Feed next error:', error);
@@ -279,13 +279,14 @@ router.post('/bytes/:id/vote', async (req: AuthenticatedRequest, res: Response) 
 /**
  * POST /feed/bytes/:id/view
  * Track that user viewed a byte (with optional dwell time)
- * Body: { dwellTimeMs: number }
+ * Body: { dwellTimeMs: number, isRead?: boolean }
+ * isRead = true means user actually read the byte (tab active 5+ seconds)
  */
 router.post('/bytes/:id/view', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.userId!;
     const byteId = req.params.id;
-    const { dwellTimeMs } = req.body as ViewInput;
+    const { dwellTimeMs, isRead } = req.body as ViewInput;
 
     // Update engagement with view
     await prisma.userEngagement.upsert({
@@ -308,11 +309,16 @@ router.post('/bytes/:id/view', async (req: AuthenticatedRequest, res: Response) 
       data: { viewCount: { increment: 1 } },
     });
 
-    // Record in history
+    // Record in history - only mark as read if explicitly confirmed
     await prisma.contentHistory.upsert({
       where: { userId_byteId: { userId, byteId } },
-      create: { userId, byteId, dwellTimeMs },
-      update: { shownAt: new Date(), dwellTimeMs },
+      create: { userId, byteId, dwellTimeMs, isRead: isRead || false },
+      update: {
+        shownAt: new Date(),
+        dwellTimeMs,
+        // Only upgrade to read, never downgrade
+        ...(isRead ? { isRead: true } : {}),
+      },
     });
 
     res.json({ success: true });
@@ -409,6 +415,73 @@ router.get('/saved', async (req: AuthenticatedRequest, res: Response) => {
 // HELPER FUNCTIONS
 // =============================================================================
 
+/**
+ * v3.0: Get bytes only from user's subscribed curated sources
+ * This is the primary feed function for the new curated content model
+ */
+async function getCuratedFeed(
+  userId: string,
+  excludeIds: string[],
+  sourceIds: string[],
+  limit: number
+) {
+  if (sourceIds.length === 0) {
+    return [];
+  }
+
+  // Get bytes from subscribed sources that have been approved (or pending moderation)
+  // Exclude rejected insights
+  const bytes = await prisma.contentByte.findMany({
+    where: {
+      id: { notIn: excludeIds },
+      edition: {
+        sourceId: { in: sourceIds },
+        source: { isCurated: true }, // Only from curated sources
+      },
+      moderationStatus: { not: 'rejected' }, // Don't show rejected content
+    },
+    include: {
+      edition: { include: { source: true } },
+      engagements: { where: { userId }, take: 1 },
+    },
+    orderBy: [
+      { qualityScore: 'desc' },
+      { engagementScore: 'desc' },
+      { createdAt: 'desc' },
+    ],
+    take: limit * 3, // Get more for diversity filtering
+  });
+
+  // Apply diversity filtering - don't show too many from same source
+  const MAX_PER_SOURCE = 2;
+  const sourceCount = new Map<string, number>();
+  const diverseResults: typeof bytes = [];
+
+  for (const byte of bytes) {
+    if (diverseResults.length >= limit) break;
+
+    const sourceId = byte.edition?.source?.id || 'unknown';
+    const currentCount = sourceCount.get(sourceId) || 0;
+
+    if (currentCount >= MAX_PER_SOURCE) continue;
+
+    diverseResults.push(byte);
+    sourceCount.set(sourceId, currentCount + 1);
+  }
+
+  // If we need more, add remaining bytes
+  if (diverseResults.length < limit) {
+    for (const byte of bytes) {
+      if (diverseResults.length >= limit) break;
+      if (!diverseResults.includes(byte)) {
+        diverseResults.push(byte);
+      }
+    }
+  }
+
+  return diverseResults;
+}
+
 async function getPopularFeed(
   userId: string,
   excludeIds: string[],
@@ -419,6 +492,7 @@ async function getPopularFeed(
   const bytes = await prisma.contentByte.findMany({
     where: {
       id: { notIn: excludeIds },
+      moderationStatus: { not: 'rejected' }, // Don't show rejected content
     },
     include: {
       edition: { include: { source: true } },
@@ -623,12 +697,21 @@ async function getPersonalizedFeed(
   return diverseResults.map((s) => s.byte);
 }
 
-async function getQueueSize(userId: string, seenByteIds: string[]): Promise<number> {
-  return prisma.contentByte.count({
-    where: {
-      id: { notIn: seenByteIds },
-    },
-  });
+async function getQueueSize(userId: string, seenByteIds: string[], sourceIds?: string[]): Promise<number> {
+  const where: any = {
+    id: { notIn: seenByteIds },
+    moderationStatus: { not: 'rejected' },
+  };
+
+  // v3.0: Only count bytes from subscribed sources
+  if (sourceIds && sourceIds.length > 0) {
+    where.edition = {
+      sourceId: { in: sourceIds },
+      source: { isCurated: true },
+    };
+  }
+
+  return prisma.contentByte.count({ where });
 }
 
 async function updateUserPreferences(

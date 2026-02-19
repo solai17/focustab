@@ -1,5 +1,5 @@
-// FocusTab Database Schema v2.0
-// "Reels for Text" - Content-Centric Architecture
+// FocusTab Database Schema v3.0
+// "Curated Wisdom" - Pivot to curated newsletter insights
 // Docs: https://pris.ly/d/prisma-schema
 
 generator client {
@@ -23,10 +23,14 @@ model User {
   name                  String
   birthDate             DateTime?  // Nullable for incomplete onboarding
   lifeExpectancy        Int       @default(80)
-  inboxEmail            String    @unique // e.g., user-abc123@inbox.focustab.app
 
-  // Monetization & Personalization
-  enableRecommendations Boolean   @default(true)  // Opt-in for sponsored content
+  // DEPRECATED: Individual inbox emails removed in v3.0
+  // Keeping field for migration compatibility, will be empty for new users
+  inboxEmail            String?   @unique
+
+  // Admin & Personalization
+  isAdmin               Boolean   @default(false) // Admin access for moderation
+  enableRecommendations Boolean   @default(true)  // Show curated content
   onboardingCompleted   Boolean   @default(false)
 
   createdAt             DateTime  @default(now())
@@ -39,6 +43,7 @@ model User {
   preferences           UserPreference[]
 
   @@index([googleId])
+  @@index([isAdmin])
   @@map("users")
 }
 
@@ -98,10 +103,12 @@ model ContentHistory {
 
   shownAt         DateTime  @default(now())
   dwellTimeMs     Int?      // How long user viewed this byte
+  isRead          Boolean   @default(false) // True if user actually read (tab active for 5+ seconds)
 
   @@unique([userId, byteId])
   @@index([userId])
   @@index([shownAt])
+  @@index([isRead])
   @@map("content_history")
 }
 
@@ -133,15 +140,26 @@ model NewsletterSource {
   senderEmail     String    @unique // Primary identifier
   senderDomain    String    // Extracted domain for grouping
   description     String?   // Auto-generated or manual
-  website         String?   // Newsletter subscription URL (extracted by AI)
+  website         String?   // Newsletter subscription URL
+  logoUrl         String?   // Newsletter logo/avatar URL
 
   // Categorization
   category        String    @default("general") // tech, business, productivity, etc.
   tags            String[]  @default([])
 
+  // Curation & Scraping
+  isCurated       Boolean   @default(false) // Admin-curated source (shown to users)
+  archiveUrl      String?   // URL to scrape newsletter archives from
+  scrapingEnabled Boolean   @default(false) // Whether auto-scraping is enabled
+  lastScrapedAt   DateTime? // When last scrape completed
+  lastScrapeStatus String?  // success, failed, partial
+  lastScrapeError String?   // Error message if failed
+  scrapeFrequency String    @default("daily") // daily, weekly, manual
+
   // Aggregate stats (updated periodically)
-  subscriberCount Int       @default(0)
-  totalEngagement Int       @default(0)
+  subscriberCount Int       @default(0) // Users subscribed to this source
+  totalEditions   Int       @default(0) // Total editions scraped
+  totalInsights   Int       @default(0) // Total insights extracted
   avgEngagementScore Float  @default(0)
 
   // Verification & Monetization
@@ -157,8 +175,10 @@ model NewsletterSource {
   subscriptions   UserSubscription[]
 
   @@index([category])
+  @@index([isCurated])
   @@index([isVerified])
   @@index([avgEngagementScore])
+  @@index([scrapingEnabled])
   @@map("newsletter_sources")
 }
 
@@ -228,6 +248,12 @@ model ContentByte {
   trendingScore   Float     @default(0) // Time-decayed engagement
   qualityScore    Float     @default(0) // AI-assessed quality (0-1)
 
+  // Moderation
+  moderationStatus String   @default("pending") // pending, approved, rejected, flagged
+  moderatedBy     String?   // Admin user ID who moderated
+  moderatedAt     DateTime? // When moderation happened
+  rejectionReason String?   // Why it was rejected (for audit)
+
   // For sponsored content
   isSponsored     Boolean   @default(false)
   sponsorId       String?   // Reference to sponsor/creator
@@ -246,6 +272,74 @@ model ContentByte {
   @@index([trendingScore])
   @@index([createdAt])
   @@index([isSponsored])
+  @@index([moderationStatus])
+  @@index([qualityScore])
   @@map("content_bytes")
+}
+
+// =============================================================================
+// ADMIN MODELS
+// =============================================================================
+
+// Forwarded emails pending admin review (from inbox@byteletters.app)
+model ForwardedEmail {
+  id              String    @id @default(uuid())
+
+  // Email metadata
+  fromEmail       String    // Original sender
+  fromName        String?   // Sender display name
+  subject         String
+  contentHash     String    @unique // For deduplication
+
+  // Raw content
+  htmlContent     String?   // Original HTML
+  textContent     String    // Plain text version
+
+  // Processing status
+  status          String    @default("pending") // pending, approved, rejected, processing
+  reviewedBy      String?   // Admin user ID
+  reviewedAt      DateTime?
+  reviewNotes     String?   // Admin notes
+
+  // If approved, links to created source
+  createdSourceId String?   // Newsletter source created from this
+
+  receivedAt      DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+
+  @@index([status])
+  @@index([fromEmail])
+  @@index([receivedAt])
+  @@map("forwarded_emails")
+}
+
+// Scraping job logs for monitoring
+model ScrapeJob {
+  id              String    @id @default(uuid())
+  sourceId        String
+
+  // Job details
+  status          String    @default("running") // running, completed, failed
+  startedAt       DateTime  @default(now())
+  completedAt     DateTime?
+
+  // Results
+  editionsFound   Int       @default(0)
+  editionsNew     Int       @default(0)
+  editionsSkipped Int       @default(0)
+  insightsCreated Int       @default(0)
+
+  // Error tracking
+  errorMessage    String?
+  errorStack      String?
+
+  // Triggered by
+  triggeredBy     String    @default("manual") // manual, scheduled, admin
+  adminUserId     String?   // If triggered by admin
+
+  @@index([sourceId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("scrape_jobs")
 }
 

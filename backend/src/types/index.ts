@@ -106,6 +106,7 @@ export interface VoteInput {
 
 export interface ViewInput {
   dwellTimeMs: number;
+  isRead?: boolean; // True if user actually read (tab active 5+ seconds)
 }
 
 export interface EngagementStats {

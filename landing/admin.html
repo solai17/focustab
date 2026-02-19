@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ByteLetters Admin</title>
+  <meta name="robots" content="noindex, nofollow">
+  <style>
+    :root {
+      --void: #0a0a0a;
+      --obsidian: #141414;
+      --slate: #1e1e1e;
+      --ash: #2a2a2a;
+      --smoke: #888888;
+      --pearl: #f5f5f5;
+      --life: #4ade80;
+      --amber: #fbbf24;
+      --rose: #f43f5e;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--void);
+      color: var(--pearl);
+      min-height: 100vh;
+    }
+
+    /* Login Screen */
+    #login-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .login-box {
+      background: var(--obsidian);
+      border: 1px solid var(--ash);
+      border-radius: 12px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 400px;
+    }
+
+    .login-box h1 {
+      font-size: 1.5rem;
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+
+    .login-box input {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      background: var(--slate);
+      border: 1px solid var(--ash);
+      border-radius: 8px;
+      color: var(--pearl);
+      font-size: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .login-box button {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      background: var(--life);
+      color: var(--void);
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .login-box button:hover {
+      opacity: 0.9;
+    }
+
+    .login-error {
+      color: var(--rose);
+      font-size: 0.875rem;
+      text-align: center;
+      margin-top: 1rem;
+      display: none;
+    }
+
+    /* Dashboard Layout */
+    #dashboard {
+      display: none;
+    }
+
+    .header {
+      background: var(--obsidian);
+      border-bottom: 1px solid var(--ash);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header h1 {
+      font-size: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    .user-email {
+      color: var(--smoke);
+      font-size: 0.875rem;
+    }
+
+    .btn-logout {
+      padding: 0.5rem 1rem;
+      background: transparent;
+      border: 1px solid var(--ash);
+      color: var(--smoke);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.875rem;
+    }
+
+    .btn-logout:hover {
+      border-color: var(--smoke);
+      color: var(--pearl);
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    /* Navigation Tabs */
+    .nav-tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 2rem;
+      border-bottom: 1px solid var(--ash);
+      padding-bottom: 1rem;
+    }
+
+    .nav-tab {
+      padding: 0.5rem 1rem;
+      background: transparent;
+      border: none;
+      color: var(--smoke);
+      font-size: 0.9rem;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+
+    .nav-tab:hover {
+      background: var(--slate);
+      color: var(--pearl);
+    }
+
+    .nav-tab.active {
+      background: var(--life);
+      color: var(--void);
+      font-weight: 600;
+    }
+
+    /* Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card {
+      background: var(--obsidian);
+      border: 1px solid var(--ash);
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+
+    .stat-card h3 {
+      font-size: 0.875rem;
+      color: var(--smoke);
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-card .value {
+      font-size: 2rem;
+      font-weight: 700;
+    }
+
+    .stat-card .value.green { color: var(--life); }
+    .stat-card .value.amber { color: var(--amber); }
+    .stat-card .value.rose { color: var(--rose); }
+
+    /* Tables */
+    .table-container {
+      background: var(--obsidian);
+      border: 1px solid var(--ash);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .table-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--ash);
+    }
+
+    .table-header h2 {
+      font-size: 1.1rem;
+    }
+
+    .table-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .btn {
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--life);
+      color: var(--void);
+    }
+
+    .btn-secondary {
+      background: var(--slate);
+      color: var(--pearl);
+      border: 1px solid var(--ash);
+    }
+
+    .btn-danger {
+      background: var(--rose);
+      color: white;
+    }
+
+    .btn:hover {
+      opacity: 0.9;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th, td {
+      padding: 1rem 1.5rem;
+      text-align: left;
+      border-bottom: 1px solid var(--ash);
+    }
+
+    th {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      color: var(--smoke);
+      font-weight: 600;
+    }
+
+    td {
+      font-size: 0.9rem;
+    }
+
+    tr:hover {
+      background: var(--slate);
+    }
+
+    .badge {
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .badge-success { background: rgba(74, 222, 128, 0.2); color: var(--life); }
+    .badge-warning { background: rgba(251, 191, 36, 0.2); color: var(--amber); }
+    .badge-danger { background: rgba(244, 63, 94, 0.2); color: var(--rose); }
+    .badge-info { background: rgba(96, 165, 250, 0.2); color: #60a5fa; }
+
+    /* Content Preview */
+    .content-preview {
+      max-width: 400px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--smoke);
+    }
+
+    /* Tab Content */
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal {
+      background: var(--obsidian);
+      border: 1px solid var(--ash);
+      border-radius: 12px;
+      width: 100%;
+      max-width: 600px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .modal-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--ash);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h2 {
+      font-size: 1.25rem;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--smoke);
+      font-size: 1.5rem;
+      cursor: pointer;
+    }
+
+    .modal-body {
+      padding: 1.5rem;
+    }
+
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.875rem;
+      color: var(--smoke);
+      margin-bottom: 0.5rem;
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      background: var(--slate);
+      border: 1px solid var(--ash);
+      border-radius: 6px;
+      color: var(--pearl);
+      font-size: 0.9rem;
+    }
+
+    .form-group textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+
+    .modal-footer {
+      padding: 1.5rem;
+      border-top: 1px solid var(--ash);
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+    }
+
+    /* Loading */
+    .loading {
+      text-align: center;
+      padding: 3rem;
+      color: var(--smoke);
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      border: 2px solid var(--ash);
+      border-top-color: var(--life);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 3rem;
+      color: var(--smoke);
+    }
+
+    .empty-state h3 {
+      font-size: 1.1rem;
+      margin-bottom: 0.5rem;
+      color: var(--pearl);
+    }
+
+    /* Filters */
+    .filters {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .filters select {
+      padding: 0.5rem 1rem;
+      background: var(--slate);
+      border: 1px solid var(--ash);
+      border-radius: 6px;
+      color: var(--pearl);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <!-- Login Screen -->
+  <div id="login-screen">
+    <div class="login-box">
+      <h1>ByteLetters Admin</h1>
+      <p style="text-align: center; color: var(--smoke); margin-bottom: 1.5rem;">
+        Sign in with your Google account
+      </p>
+      <button onclick="loginWithGoogle()">Sign in with Google</button>
+      <p class="login-error" id="login-error"></p>
+    </div>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dashboard">
+    <header class="header">
+      <h1>
+        <span style="font-size: 1.5rem;">B</span>yteLetters Admin
+      </h1>
+      <div class="header-actions">
+        <span class="user-email" id="user-email"></span>
+        <button class="btn-logout" onclick="logout()">Logout</button>
+      </div>
+    </header>
+
+    <div class="container">
+      <!-- Navigation Tabs -->
+      <nav class="nav-tabs">
+        <button class="nav-tab active" data-tab="overview">Overview</button>
+        <button class="nav-tab" data-tab="sources">Newsletter Sources</button>
+        <button class="nav-tab" data-tab="insights">Insights</button>
+        <button class="nav-tab" data-tab="forwarded">Forwarded Emails</button>
+        <button class="nav-tab" data-tab="scraping">Scraping</button>
+      </nav>
+
+      <!-- Overview Tab -->
+      <div id="tab-overview" class="tab-content active">
+        <div class="stats-grid" id="stats-grid">
+          <div class="loading"><div class="spinner"></div><br>Loading stats...</div>
+        </div>
+      </div>
+
+      <!-- Sources Tab -->
+      <div id="tab-sources" class="tab-content">
+        <div class="table-container">
+          <div class="table-header">
+            <h2>Newsletter Sources</h2>
+            <div class="table-actions">
+              <button class="btn btn-primary" onclick="showAddSourceModal()">Add Source</button>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Category</th>
+                <th>Editions</th>
+                <th>Insights</th>
+                <th>Subscribers</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="sources-table">
+              <tr><td colspan="7" class="loading"><div class="spinner"></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Insights Tab -->
+      <div id="tab-insights" class="tab-content">
+        <div class="filters">
+          <select id="insights-status-filter" onchange="loadInsights()">
+            <option value="pending">Pending Moderation</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+            <option value="all">All Status</option>
+          </select>
+          <select id="insights-source-filter" onchange="loadInsights()">
+            <option value="">All Sources</option>
+          </select>
+        </div>
+        <div class="table-container">
+          <div class="table-header">
+            <h2>Insights</h2>
+            <div class="table-actions">
+              <button class="btn btn-primary" onclick="bulkApprove()">Approve Selected</button>
+              <button class="btn btn-danger" onclick="bulkReject()">Reject Selected</button>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th><input type="checkbox" id="select-all-insights" onchange="toggleSelectAll()"></th>
+                <th>Content</th>
+                <th>Source</th>
+                <th>Type</th>
+                <th>Quality</th>
+                <th>Votes</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="insights-table">
+              <tr><td colspan="8" class="loading"><div class="spinner"></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Forwarded Emails Tab -->
+      <div id="tab-forwarded" class="tab-content">
+        <div class="table-container">
+          <div class="table-header">
+            <h2>Forwarded Emails (Pending Review)</h2>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>From</th>
+                <th>Subject</th>
+                <th>Received</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="forwarded-table">
+              <tr><td colspan="5" class="loading"><div class="spinner"></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Scraping Tab -->
+      <div id="tab-scraping" class="tab-content">
+        <div class="table-container">
+          <div class="table-header">
+            <h2>Recent Scrape Jobs</h2>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Started</th>
+                <th>Status</th>
+                <th>Editions Found</th>
+                <th>New</th>
+                <th>Insights</th>
+                <th>Error</th>
+              </tr>
+            </thead>
+            <tbody id="scraping-table">
+              <tr><td colspan="7" class="loading"><div class="spinner"></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Source Modal -->
+  <div class="modal-overlay" id="add-source-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Add Newsletter Source</h2>
+        <button class="modal-close" onclick="closeModal('add-source-modal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Newsletter Name *</label>
+          <input type="text" id="source-name" placeholder="e.g., James Clear 3-2-1">
+        </div>
+        <div class="form-group">
+          <label>Sender Email *</label>
+          <input type="email" id="source-email" placeholder="e.g., newsletter@example.com">
+        </div>
+        <div class="form-group">
+          <label>Archive URL (for scraping)</label>
+          <input type="url" id="source-archive" placeholder="e.g., https://example.com/archive">
+        </div>
+        <div class="form-group">
+          <label>Website</label>
+          <input type="url" id="source-website" placeholder="e.g., https://example.com">
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <textarea id="source-description" placeholder="Brief description of this newsletter"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Category</label>
+          <select id="source-category">
+            <option value="wisdom">Wisdom</option>
+            <option value="productivity">Productivity</option>
+            <option value="business">Business</option>
+            <option value="tech">Tech</option>
+            <option value="life">Life</option>
+            <option value="creativity">Creativity</option>
+            <option value="general">General</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('add-source-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="saveSource()">Add Source</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Configuration
+    const API_URL = window.location.hostname === 'localhost'
+      ? 'http://localhost:3000'
+      : 'https://api.byteletters.app';
+
+    let authToken = localStorage.getItem('admin_token');
+    let currentUser = null;
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      if (authToken) {
+        checkAuth();
+      }
+
+      // Tab navigation
+      document.querySelectorAll('.nav-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          const tabId = tab.dataset.tab;
+          switchTab(tabId);
+        });
+      });
+    });
+
+    // Auth functions
+    async function loginWithGoogle() {
+      // For now, use a simple token-based login
+      // In production, integrate with Google Identity
+      const email = prompt('Enter your admin email:');
+      if (!email) return;
+
+      try {
+        // Try to authenticate with the existing auth system
+        const response = await fetch(`${API_URL}/auth/google`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            googleEmail: email,
+            googleId: 'admin-' + Date.now(),
+            name: email.split('@')[0],
+          }),
+        });
+
+        const data = await response.json();
+        if (data.token) {
+          authToken = data.token;
+          currentUser = data.user;
+          localStorage.setItem('admin_token', authToken);
+          showDashboard();
+        } else {
+          showError('Authentication failed');
+        }
+      } catch (error) {
+        showError('Failed to connect to server');
+      }
+    }
+
+    async function checkAuth() {
+      try {
+        const response = await fetch(`${API_URL}/admin/stats`, {
+          headers: { 'Authorization': `Bearer ${authToken}` },
+        });
+
+        if (response.ok) {
+          showDashboard();
+        } else {
+          logout();
+        }
+      } catch (error) {
+        logout();
+      }
+    }
+
+    function logout() {
+      authToken = null;
+      currentUser = null;
+      localStorage.removeItem('admin_token');
+      document.getElementById('login-screen').style.display = 'flex';
+      document.getElementById('dashboard').style.display = 'none';
+    }
+
+    function showError(message) {
+      const errorEl = document.getElementById('login-error');
+      errorEl.textContent = message;
+      errorEl.style.display = 'block';
+    }
+
+    function showDashboard() {
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'block';
+      if (currentUser) {
+        document.getElementById('user-email').textContent = currentUser.email;
+      }
+      loadStats();
+    }
+
+    // Tab navigation
+    function switchTab(tabId) {
+      document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+      document.querySelector(`[data-tab="${tabId}"]`).classList.add('active');
+      document.getElementById(`tab-${tabId}`).classList.add('active');
+
+      // Load data for tab
+      switch (tabId) {
+        case 'overview': loadStats(); break;
+        case 'sources': loadSources(); break;
+        case 'insights': loadInsights(); break;
+        case 'forwarded': loadForwarded(); break;
+        case 'scraping': loadScraping(); break;
+      }
+    }
+
+    // API calls
+    async function apiCall(endpoint, options = {}) {
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+          ...options.headers,
+        },
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        logout();
+        throw new Error('Unauthorized');
+      }
+
+      return response.json();
+    }
+
+    // Load functions
+    async function loadStats() {
+      try {
+        const data = await apiCall('/admin/stats');
+
+        document.getElementById('stats-grid').innerHTML = `
+          <div class="stat-card">
+            <h3>Users</h3>
+            <div class="value">${data.users.total}</div>
+          </div>
+          <div class="stat-card">
+            <h3>Curated Sources</h3>
+            <div class="value green">${data.sources.curated}</div>
+          </div>
+          <div class="stat-card">
+            <h3>Total Insights</h3>
+            <div class="value">${data.insights.total}</div>
+          </div>
+          <div class="stat-card">
+            <h3>Pending Moderation</h3>
+            <div class="value amber">${data.insights.pendingModeration}</div>
+          </div>
+          <div class="stat-card">
+            <h3>Rejected</h3>
+            <div class="value rose">${data.insights.rejected}</div>
+          </div>
+          <div class="stat-card">
+            <h3>Downvoted</h3>
+            <div class="value rose">${data.insights.downvoted}</div>
+          </div>
+          <div class="stat-card">
+            <h3>Forwarded Emails</h3>
+            <div class="value amber">${data.forwardedEmails.pending}</div>
+          </div>
+          <div class="stat-card">
+            <h3>Processing Queue</h3>
+            <div class="value">${data.processing.pending || 0}</div>
+          </div>
+        `;
+      } catch (error) {
+        console.error('Failed to load stats:', error);
+      }
+    }
+
+    async function loadSources() {
+      try {
+        const data = await apiCall('/admin/sources');
+        const tbody = document.getElementById('sources-table');
+
+        if (data.sources.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><h3>No sources yet</h3><p>Add your first newsletter source</p></td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.sources.map(source => `
+          <tr>
+            <td><strong>${source.name}</strong></td>
+            <td><span class="badge badge-info">${source.category}</span></td>
+            <td>${source.stats.editions}</td>
+            <td>${source.stats.insights}</td>
+            <td>${source.stats.subscribers}</td>
+            <td>
+              ${source.isCurated ? '<span class="badge badge-success">Curated</span>' : '<span class="badge badge-warning">Draft</span>'}
+              ${source.scrapingEnabled ? '<span class="badge badge-info">Scraping</span>' : ''}
+            </td>
+            <td>
+              <button class="btn btn-secondary" onclick="editSource('${source.id}')">Edit</button>
+              ${source.archiveUrl ? `<button class="btn btn-primary" onclick="triggerScrape('${source.id}')">Scrape</button>` : ''}
+            </td>
+          </tr>
+        `).join('');
+
+        // Also populate source filter
+        const filter = document.getElementById('insights-source-filter');
+        filter.innerHTML = '<option value="">All Sources</option>' +
+          data.sources.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+      } catch (error) {
+        console.error('Failed to load sources:', error);
+      }
+    }
+
+    async function loadInsights() {
+      try {
+        const status = document.getElementById('insights-status-filter').value;
+        const sourceId = document.getElementById('insights-source-filter').value;
+
+        let url = `/admin/insights?status=${status}&limit=50`;
+        if (sourceId) url += `&sourceId=${sourceId}`;
+
+        const data = await apiCall(url);
+        const tbody = document.getElementById('insights-table');
+
+        if (data.insights.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><h3>No insights found</h3><p>Try changing the filters</p></td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.insights.map(insight => `
+          <tr>
+            <td><input type="checkbox" class="insight-checkbox" value="${insight.id}"></td>
+            <td class="content-preview" title="${insight.content}">${insight.content}</td>
+            <td>${insight.source?.name || 'Unknown'}</td>
+            <td><span class="badge badge-info">${insight.type}</span></td>
+            <td>${(insight.qualityScore * 100).toFixed(0)}%</td>
+            <td>
+              <span style="color: var(--life);">+${insight.engagement.upvotes}</span> /
+              <span style="color: var(--rose);">-${insight.engagement.downvotes}</span>
+            </td>
+            <td>
+              <span class="badge ${getStatusBadge(insight.moderationStatus)}">${insight.moderationStatus}</span>
+            </td>
+            <td>
+              ${insight.moderationStatus === 'pending' ? `
+                <button class="btn btn-primary" onclick="moderateInsight('${insight.id}', 'approve')">Approve</button>
+                <button class="btn btn-danger" onclick="moderateInsight('${insight.id}', 'reject')">Reject</button>
+              ` : ''}
+            </td>
+          </tr>
+        `).join('');
+      } catch (error) {
+        console.error('Failed to load insights:', error);
+      }
+    }
+
+    async function loadForwarded() {
+      try {
+        const data = await apiCall('/admin/forwarded');
+        const tbody = document.getElementById('forwarded-table');
+
+        if (data.emails.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" class="empty-state"><h3>No pending emails</h3><p>Forwarded emails will appear here for review</p></td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.emails.map(email => `
+          <tr>
+            <td><strong>${email.fromName || email.fromEmail}</strong><br><small>${email.fromEmail}</small></td>
+            <td>${email.subject}</td>
+            <td>${new Date(email.receivedAt).toLocaleString()}</td>
+            <td><span class="badge ${getStatusBadge(email.status)}">${email.status}</span></td>
+            <td>
+              ${email.status === 'pending' ? `
+                <button class="btn btn-primary" onclick="reviewForwarded('${email.id}', 'approve')">Create Source</button>
+                <button class="btn btn-danger" onclick="reviewForwarded('${email.id}', 'reject')">Reject</button>
+              ` : ''}
+            </td>
+          </tr>
+        `).join('');
+      } catch (error) {
+        console.error('Failed to load forwarded:', error);
+      }
+    }
+
+    async function loadScraping() {
+      try {
+        const data = await apiCall('/admin/scrape/jobs');
+        const tbody = document.getElementById('scraping-table');
+
+        if (data.jobs.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><h3>No scrape jobs</h3><p>Trigger a scrape from the Sources tab</p></td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.jobs.map(job => `
+          <tr>
+            <td><strong>${job.sourceName}</strong></td>
+            <td>${new Date(job.startedAt).toLocaleString()}</td>
+            <td><span class="badge ${getStatusBadge(job.status)}">${job.status}</span></td>
+            <td>${job.editionsFound}</td>
+            <td>${job.editionsNew}</td>
+            <td>${job.insightsCreated}</td>
+            <td>${job.errorMessage ? `<span style="color: var(--rose);">${job.errorMessage}</span>` : '-'}</td>
+          </tr>
+        `).join('');
+      } catch (error) {
+        console.error('Failed to load scraping:', error);
+      }
+    }
+
+    // Helper functions
+    function getStatusBadge(status) {
+      switch (status) {
+        case 'approved':
+        case 'completed':
+        case 'success': return 'badge-success';
+        case 'pending':
+        case 'running': return 'badge-warning';
+        case 'rejected':
+        case 'failed': return 'badge-danger';
+        default: return 'badge-info';
+      }
+    }
+
+    // Modal functions
+    function showAddSourceModal() {
+      document.getElementById('add-source-modal').classList.add('active');
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('active');
+    }
+
+    async function saveSource() {
+      const data = {
+        name: document.getElementById('source-name').value,
+        senderEmail: document.getElementById('source-email').value,
+        archiveUrl: document.getElementById('source-archive').value || null,
+        website: document.getElementById('source-website').value || null,
+        description: document.getElementById('source-description').value || null,
+        category: document.getElementById('source-category').value,
+        isCurated: true,
+        scrapingEnabled: !!document.getElementById('source-archive').value,
+      };
+
+      if (!data.name || !data.senderEmail) {
+        alert('Name and email are required');
+        return;
+      }
+
+      try {
+        await apiCall('/admin/sources', {
+          method: 'POST',
+          body: JSON.stringify(data),
+        });
+        closeModal('add-source-modal');
+        loadSources();
+        alert('Source created successfully!');
+      } catch (error) {
+        alert('Failed to create source');
+      }
+    }
+
+    async function triggerScrape(sourceId) {
+      if (!confirm('Start scraping this source?')) return;
+
+      try {
+        await apiCall('/admin/scrape/trigger', {
+          method: 'POST',
+          body: JSON.stringify({ sourceId }),
+        });
+        alert('Scrape job queued. Run the scraper script to process.');
+        switchTab('scraping');
+      } catch (error) {
+        alert('Failed to trigger scrape');
+      }
+    }
+
+    async function moderateInsight(id, action) {
+      try {
+        await apiCall(`/admin/insights/${id}/moderate`, {
+          method: 'POST',
+          body: JSON.stringify({ action }),
+        });
+        loadInsights();
+      } catch (error) {
+        alert('Failed to moderate insight');
+      }
+    }
+
+    function toggleSelectAll() {
+      const checked = document.getElementById('select-all-insights').checked;
+      document.querySelectorAll('.insight-checkbox').forEach(cb => cb.checked = checked);
+    }
+
+    async function bulkApprove() {
+      const ids = Array.from(document.querySelectorAll('.insight-checkbox:checked')).map(cb => cb.value);
+      if (ids.length === 0) {
+        alert('Select at least one insight');
+        return;
+      }
+
+      try {
+        await apiCall('/admin/insights/bulk-moderate', {
+          method: 'POST',
+          body: JSON.stringify({ ids, action: 'approve' }),
+        });
+        loadInsights();
+      } catch (error) {
+        alert('Failed to approve insights');
+      }
+    }
+
+    async function bulkReject() {
+      const ids = Array.from(document.querySelectorAll('.insight-checkbox:checked')).map(cb => cb.value);
+      if (ids.length === 0) {
+        alert('Select at least one insight');
+        return;
+      }
+
+      const reason = prompt('Rejection reason (optional):');
+
+      try {
+        await apiCall('/admin/insights/bulk-moderate', {
+          method: 'POST',
+          body: JSON.stringify({ ids, action: 'reject', reason }),
+        });
+        loadInsights();
+      } catch (error) {
+        alert('Failed to reject insights');
+      }
+    }
+
+    async function reviewForwarded(id, action) {
+      if (action === 'approve') {
+        const name = prompt('Newsletter name:');
+        const senderEmail = prompt('Sender email:');
+        const archiveUrl = prompt('Archive URL (optional):');
+
+        if (!name || !senderEmail) {
+          alert('Name and email required');
+          return;
+        }
+
+        try {
+          await apiCall(`/admin/forwarded/${id}/review`, {
+            method: 'POST',
+            body: JSON.stringify({
+              action: 'approve',
+              createSource: { name, senderEmail, archiveUrl: archiveUrl || undefined },
+            }),
+          });
+          loadForwarded();
+          loadSources();
+        } catch (error) {
+          alert('Failed to review email');
+        }
+      } else {
+        try {
+          await apiCall(`/admin/forwarded/${id}/review`, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'reject' }),
+          });
+          loadForwarded();
+        } catch (error) {
+          alert('Failed to reject email');
+        }
+      }
+    }
+  </script>
+</body>
+</html>

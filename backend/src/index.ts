@@ -13,6 +13,8 @@ import feedRoutes from './routes/feed';
 import discoverRoutes from './routes/discover';
 import testFeedRoutes from './routes/testFeed';
 import internalRoutes from './routes/internal';
+import adminRoutes from './routes/admin';
+import newslettersRoutes from './routes/newsletters';
 import { isMockDb } from './services/db';
 import { securityHeaders, validateRequest, rateLimits, requestLogger } from './middleware/security';
 
@@ -74,10 +76,12 @@ app.get('/health', (req, res) => {
 // API Routes
 app.use('/auth', authRoutes);
 app.use('/webhooks', webhookRoutes);
-app.use('/feed', feedRoutes);        // Content feed with engagement
-app.use('/discover', discoverRoutes); // Content discovery
-app.use('/test-feed', testFeedRoutes); // Test routes (no auth, works with mock db)
-app.use('/internal', internalRoutes); // Cron/admin endpoints (protected)
+app.use('/feed', feedRoutes);           // Content feed with engagement
+app.use('/discover', discoverRoutes);   // Content discovery
+app.use('/newsletters', newslettersRoutes); // Curated newsletter sources
+app.use('/test-feed', testFeedRoutes);  // Test routes (no auth, works with mock db)
+app.use('/internal', internalRoutes);   // Cron/admin endpoints (protected)
+app.use('/admin', adminRoutes);         // Admin dashboard endpoints
 
 // 404 handler
 app.use((req, res) => {
