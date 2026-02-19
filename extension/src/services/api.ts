@@ -134,11 +134,12 @@ export async function toggleSaveByte(byteId: string): Promise<SaveResponse> {
 
 /**
  * Track view of a byte
+ * @param isRead - true if user actually read the byte (tab was active 5+ seconds)
  */
-export async function trackByteView(byteId: string, dwellTimeMs: number): Promise<void> {
+export async function trackByteView(byteId: string, dwellTimeMs: number, isRead: boolean = false): Promise<void> {
   await apiRequest<{ success: boolean }>(`/feed/bytes/${byteId}/view`, {
     method: 'POST',
-    body: JSON.stringify({ dwellTimeMs }),
+    body: JSON.stringify({ dwellTimeMs, isRead }),
   });
 }
 

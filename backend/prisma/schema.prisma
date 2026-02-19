@@ -98,10 +98,12 @@ model ContentHistory {
 
   shownAt         DateTime  @default(now())
   dwellTimeMs     Int?      // How long user viewed this byte
+  isRead          Boolean   @default(false) // True if user actually read (tab active for 5+ seconds)
 
   @@unique([userId, byteId])
   @@index([userId])
   @@index([shownAt])
+  @@index([isRead])
   @@map("content_history")
 }
 

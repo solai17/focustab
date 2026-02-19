@@ -19,7 +19,7 @@ interface ByteCardProps {
   onSave: (byteId: string) => void;
   onShare: (byteId: string) => void;
   onNext: () => void;
-  onView: (byteId: string, dwellTimeMs: number) => void;
+  onView: (byteId: string, dwellTimeMs: number, isRead: boolean) => void;
   queueSize: number;
   isCommunityContent?: boolean;
   inboxEmail?: string;
@@ -41,6 +41,12 @@ export function ByteCard({
   const [showShareToast, setShowShareToast] = useState(false);
   const [emailCopied, setEmailCopied] = useState(false);
   const viewStartTime = useRef(Date.now());
+  const isReadRef = useRef(false);
+  const readTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeTimeRef = useRef(0); // Accumulated active time in ms
+  const lastActiveTimestamp = useRef(Date.now());
+
+  const READ_THRESHOLD_MS = 5000; // 5 seconds of active tab time = read
 
   // Copy email to clipboard
   const copyEmailToClipboard = async () => {
@@ -55,19 +61,65 @@ export function ByteCard({
     }
   };
 
-  // Reset state when byte changes (fixes issue #2)
+  // Reset state when byte changes
   useEffect(() => {
     setLocalVote((byte.userEngagement?.vote as VoteValue) || 0);
     setLocalSaved(byte.userEngagement?.isSaved || false);
     viewStartTime.current = Date.now();
+    isReadRef.current = false;
+    activeTimeRef.current = 0;
+    lastActiveTimestamp.current = Date.now();
   }, [byte.id]);
 
-  // Track view time when unmounting or navigating away
+  // Track tab visibility to determine if user actually read the byte
   useEffect(() => {
+    const startReadTimer = () => {
+      // Calculate remaining time needed to hit threshold
+      const remaining = READ_THRESHOLD_MS - activeTimeRef.current;
+      if (remaining <= 0 || isReadRef.current) return;
+
+      lastActiveTimestamp.current = Date.now();
+      readTimerRef.current = setTimeout(() => {
+        isReadRef.current = true;
+        // Immediately send read signal so backend knows even if tab stays open
+        const dwellTime = Date.now() - viewStartTime.current;
+        onView(byte.id, dwellTime, true);
+      }, remaining);
+    };
+
+    const pauseReadTimer = () => {
+      if (readTimerRef.current) {
+        clearTimeout(readTimerRef.current);
+        readTimerRef.current = null;
+      }
+      // Accumulate the active time so far
+      activeTimeRef.current += Date.now() - lastActiveTimestamp.current;
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        startReadTimer();
+      } else {
+        pauseReadTimer();
+      }
+    };
+
+    // Start tracking if tab is already visible
+    if (document.visibilityState === 'visible') {
+      startReadTimer();
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (readTimerRef.current) {
+        clearTimeout(readTimerRef.current);
+      }
+      // Send final dwell time on unmount (byte change or navigation)
       const dwellTime = Date.now() - viewStartTime.current;
       if (dwellTime > 1000) {
-        onView(byte.id, dwellTime);
+        onView(byte.id, dwellTime, isReadRef.current);
       }
     };
   }, [byte.id, onView]);

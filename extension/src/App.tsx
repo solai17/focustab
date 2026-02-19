@@ -388,12 +388,12 @@ function App() {
     // TODO: Implement share tracking on backend
   }, []);
 
-  // Handle view tracking
-  const handleView = useCallback(async (byteId: string, dwellTimeMs: number) => {
+  // Handle view tracking with read status
+  const handleView = useCallback(async (byteId: string, dwellTimeMs: number, isRead: boolean) => {
     // Only track views if using the API
     if (!usingMockData.current) {
       try {
-        await trackByteView(byteId, dwellTimeMs);
+        await trackByteView(byteId, dwellTimeMs, isRead);
       } catch (error) {
         console.error('Failed to track view:', error);
       }

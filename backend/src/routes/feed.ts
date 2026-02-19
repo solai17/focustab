@@ -34,15 +34,23 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
     const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
     const cursor = req.query.cursor as string | undefined;
 
-    // Get user for personalization
+    // Get user for personalization with history and engagements
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
         preferences: true,
         contentHistory: {
+          where: { isRead: true }, // Only exclude bytes that were actually read
           select: { byteId: true },
-          orderBy: { shownAt: 'desc' },
-          take: 500, // Last 500 seen bytes for filtering
+        },
+        engagements: {
+          where: {
+            OR: [
+              { vote: { not: 0 } }, // User voted (liked or disliked)
+              { isSaved: true },     // User saved/bookmarked
+            ],
+          },
+          select: { byteId: true },
         },
       },
     });
@@ -51,8 +59,10 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Get IDs of content user has already seen
-    const seenByteIds = user.contentHistory.map((h) => h.byteId);
+    // Exclude bytes that user has read OR interacted with (voted/saved)
+    const readByteIds = user.contentHistory.map((h) => h.byteId);
+    const interactedByteIds = user.engagements.map((e) => e.byteId);
+    const seenByteIds = [...new Set([...readByteIds, ...interactedByteIds])];
 
     // Build query based on feed type
     let bytes;
@@ -104,19 +114,27 @@ router.get('/next', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.userId!;
 
-    // Get user with preferences, history, and subscriptions
+    // Get user with preferences, history, subscriptions, and engagements
     const user = await prisma.user.findUnique({
       where: { id: userId },
       include: {
         preferences: true,
         contentHistory: {
+          where: { isRead: true }, // Only exclude bytes that were actually read
           select: { byteId: true },
-          orderBy: { shownAt: 'desc' },
-          take: 100,
         },
         subscriptions: {
           where: { isActive: true },
           select: { sourceId: true },
+        },
+        engagements: {
+          where: {
+            OR: [
+              { vote: { not: 0 } }, // User voted (liked or disliked)
+              { isSaved: true },     // User saved/bookmarked
+            ],
+          },
+          select: { byteId: true },
         },
       },
     });
@@ -125,7 +143,10 @@ router.get('/next', async (req: AuthenticatedRequest, res: Response) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const seenByteIds = user.contentHistory.map((h) => h.byteId);
+    // Exclude bytes that user has read OR interacted with (voted/saved)
+    const readByteIds = user.contentHistory.map((h) => h.byteId);
+    const interactedByteIds = user.engagements.map((e) => e.byteId);
+    const seenByteIds = [...new Set([...readByteIds, ...interactedByteIds])];
     const userSourceIds = user.subscriptions.map((s) => s.sourceId);
     const hasUserSubscriptions = userSourceIds.length > 0;
 
@@ -172,12 +193,12 @@ router.get('/next', async (req: AuthenticatedRequest, res: Response) => {
       });
     }
 
-    // Record that we're showing this byte
+    // Record that we're showing this byte (isRead stays false until user actually reads it)
     await prisma.contentHistory.upsert({
       where: {
         userId_byteId: { userId, byteId: bytes[0].id },
       },
-      create: { userId, byteId: bytes[0].id },
+      create: { userId, byteId: bytes[0].id, isRead: false },
       update: { shownAt: new Date() },
     });
 
@@ -279,13 +300,14 @@ router.post('/bytes/:id/vote', async (req: AuthenticatedRequest, res: Response) 
 /**
  * POST /feed/bytes/:id/view
  * Track that user viewed a byte (with optional dwell time)
- * Body: { dwellTimeMs: number }
+ * Body: { dwellTimeMs: number, isRead?: boolean }
+ * isRead = true means user actually read the byte (tab active 5+ seconds)
  */
 router.post('/bytes/:id/view', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.userId!;
     const byteId = req.params.id;
-    const { dwellTimeMs } = req.body as ViewInput;
+    const { dwellTimeMs, isRead } = req.body as ViewInput;
 
     // Update engagement with view
     await prisma.userEngagement.upsert({
@@ -308,11 +330,16 @@ router.post('/bytes/:id/view', async (req: AuthenticatedRequest, res: Response) 
       data: { viewCount: { increment: 1 } },
     });
 
-    // Record in history
+    // Record in history - only mark as read if explicitly confirmed
     await prisma.contentHistory.upsert({
       where: { userId_byteId: { userId, byteId } },
-      create: { userId, byteId, dwellTimeMs },
-      update: { shownAt: new Date(), dwellTimeMs },
+      create: { userId, byteId, dwellTimeMs, isRead: isRead || false },
+      update: {
+        shownAt: new Date(),
+        dwellTimeMs,
+        // Only upgrade to read, never downgrade
+        ...(isRead ? { isRead: true } : {}),
+      },
     });
 
     res.json({ success: true });
