@@ -15,10 +15,10 @@
  *
  * Environment Variables:
  * - CRON_SECRET: Secret key to authenticate with backend
- * - API_URL: Backend API URL (default: https://antletters-api.onrender.com)
+ * - API_URL: Backend API URL (default: https://api.byteletters.app)
  */
 
-const DEFAULT_API_URL = 'https://antletters-api.onrender.com';
+const DEFAULT_API_URL = 'https://api.byteletters.app';
 
 export default {
   // Scheduled handler for cron triggers (every 5 minutes)

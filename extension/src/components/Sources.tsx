@@ -40,7 +40,7 @@ export function Sources({ onClose }: SourcesProps) {
       const auth = await getStoredAuth();
       if (!auth?.token) return;
 
-      const API_URL = import.meta.env.VITE_API_URL || 'https://antletters-api.onrender.com';
+      const API_URL = import.meta.env.VITE_API_URL || 'https://api.byteletters.app';
       const response = await fetch(`${API_URL}/newsletters`, {
         headers: { Authorization: `Bearer ${auth.token}` },
       });
@@ -67,7 +67,7 @@ export function Sources({ onClose }: SourcesProps) {
       const auth = await getStoredAuth();
       if (!auth?.token) return;
 
-      const API_URL = import.meta.env.VITE_API_URL || 'https://antletters-api.onrender.com';
+      const API_URL = import.meta.env.VITE_API_URL || 'https://api.byteletters.app';
       const endpoint = newsletter.isSubscribed ? 'unsubscribe' : 'subscribe';
 
       const response = await fetch(`${API_URL}/newsletters/${newsletter.id}/${endpoint}`, {

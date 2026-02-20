@@ -117,7 +117,7 @@ PORT="3000"
    - Environment: Set all environment variables above
 
 ### Step 3: Get Service URL
-Your service URL will be: `https://antletters-api.onrender.com`
+Your service URL will be: `https://api.byteletters.app` (custom domain pointing to Render)
 
 ---
 
@@ -197,7 +197,7 @@ Update `extension/public/manifest.json`:
 
 The extension is pre-configured to use:
 ```typescript
-const API_BASE_URL = 'https://antletters-api.onrender.com';
+const API_BASE_URL = 'https://api.byteletters.app';
 ```
 
 ### Step 2: Build Extension
@@ -340,7 +340,7 @@ npx wrangler tail
 ### Common Issues
 
 **Extension not loading bytes**
-1. Check API is reachable: `curl https://antletters-api.onrender.com/health`
+1. Check API is reachable: `curl https://api.byteletters.app/health`
 2. Verify user has subscriptions in Sources
 3. Check browser console for errors
 
