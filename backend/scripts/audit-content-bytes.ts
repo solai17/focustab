@@ -160,9 +160,11 @@ async function runAudit() {
   const totalBytes = await prisma.contentByte.count();
   console.log(`\nTotal content bytes: ${totalBytes}`);
 
-  // Get bytes that haven't been audited (qualityScore = 0 or very low)
-  // Or get all bytes if you want to re-audit everything
+  // Get bytes that haven't been audited yet (qualityScore = 0)
+  // To re-audit everything, use: REAUDIT_ALL=true npm run audit
+  const reauditAll = process.env.REAUDIT_ALL === 'true';
   const unauditedBytes = await prisma.contentByte.findMany({
+    where: reauditAll ? {} : { qualityScore: 0 },
     select: {
       id: true,
       content: true,
