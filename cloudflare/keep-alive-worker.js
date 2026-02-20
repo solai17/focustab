@@ -13,7 +13,7 @@
  * 6. Deploy
  */
 
-const API_URL = 'https://api.byteletters.app/health';
+const API_URL = 'https://antletters-api.onrender.com/health';
 
 export default {
   // Scheduled handler for cron triggers

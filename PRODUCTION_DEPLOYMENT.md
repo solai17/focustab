@@ -14,8 +14,8 @@ Complete guide for deploying ByteLetters v3.0 with:
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Chrome Ext    │────▶│   Railway API   │────▶│    Supabase     │
-│  (Web Store)    │     │ api.byteletters │     │   PostgreSQL    │
+│   Chrome Ext    │────▶│   Render API    │────▶│    Supabase     │
+│  (Web Store)    │     │ antletters-api  │     │   PostgreSQL    │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
                                ▲
                                │
@@ -41,7 +41,7 @@ Complete guide for deploying ByteLetters v3.0 with:
 |---------|---------|-----|
 | Google Cloud | Chrome Identity OAuth | console.cloud.google.com |
 | Supabase | PostgreSQL database | supabase.com |
-| Railway | API hosting | railway.app |
+| Render | API hosting | render.com |
 | Cloudflare | Email Workers, Pages | cloudflare.com |
 | Chrome Developer | Extension publishing | chrome.google.com/webstore/devconsole |
 
@@ -79,7 +79,7 @@ npx prisma generate
 
 ---
 
-## 3. Backend Deployment (Railway)
+## 3. Backend Deployment (Render)
 
 ### Step 1: Environment Variables
 
@@ -107,34 +107,17 @@ NODE_ENV="production"
 PORT="3000"
 ```
 
-### Step 2: Deploy to Railway
+### Step 2: Deploy to Render
 
-```bash
-# Install Railway CLI
-npm install -g @railway/cli
+1. Go to [render.com](https://render.com) and create a new Web Service
+2. Connect your GitHub repository
+3. Configure:
+   - Build Command: `cd backend && npm install && npm run build`
+   - Start Command: `cd backend && npm start`
+   - Environment: Set all environment variables above
 
-# Login
-railway login
-
-# Initialize project
-cd backend
-railway init
-
-# Set environment variables
-railway variables set DATABASE_URL="..."
-railway variables set JWT_SECRET="..."
-railway variables set ANTHROPIC_API_KEY="..."
-# ... set all variables
-
-# Deploy
-railway up
-```
-
-### Step 3: Configure Domain
-1. Go to Railway dashboard → your service
-2. Settings → Domains
-3. Add custom domain: `api.byteletters.app`
-4. Update DNS records as instructed
+### Step 3: Get Service URL
+Your service URL will be: `https://antletters-api.onrender.com`
 
 ---
 
@@ -212,9 +195,9 @@ Update `extension/public/manifest.json`:
 }
 ```
 
-Update `extension/src/services/api.ts`:
+The extension is pre-configured to use:
 ```typescript
-const API_BASE_URL = 'https://api.byteletters.app';
+const API_BASE_URL = 'https://antletters-api.onrender.com';
 ```
 
 ### Step 2: Build Extension
@@ -344,8 +327,7 @@ ORDER BY pg_total_relation_size(relid) DESC;
 
 ### Log Monitoring
 ```bash
-# Railway logs
-railway logs
+# Render logs - check in Render dashboard
 
 # Cloudflare Worker logs
 npx wrangler tail
@@ -358,7 +340,7 @@ npx wrangler tail
 ### Common Issues
 
 **Extension not loading bytes**
-1. Check API is reachable: `curl https://api.byteletters.app/health`
+1. Check API is reachable: `curl https://antletters-api.onrender.com/health`
 2. Verify user has subscriptions in Sources
 3. Check browser console for errors
 
@@ -370,7 +352,7 @@ npx wrangler tail
 **Emails not being processed**
 1. Check Cloudflare Email Routing is active
 2. Verify webhook secret matches
-3. Check Railway logs for webhook errors
+3. Check Render logs for webhook errors
 
 **Scraping failing**
 1. Check archive URL is accessible
@@ -383,8 +365,8 @@ npx wrangler tail
 
 ### Deploy Commands
 ```bash
-# Backend (Railway)
-cd backend && railway up
+# Backend (Render)
+# Deploy via Render dashboard or git push
 
 # Cloudflare Worker
 cd cloudflare-worker && npm run deploy
