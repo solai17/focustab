@@ -247,6 +247,7 @@ model ContentByte {
   engagementScore Float     @default(0) // Weighted engagement
   trendingScore   Float     @default(0) // Time-decayed engagement
   qualityScore    Float     @default(0) // AI-assessed quality (0-1)
+  isAudited       Boolean   @default(false) // Whether this byte has been quality audited
 
   // Moderation
   moderationStatus String   @default("pending") // pending, approved, rejected, flagged
@@ -274,6 +275,7 @@ model ContentByte {
   @@index([isSponsored])
   @@index([moderationStatus])
   @@index([qualityScore])
+  @@index([isAudited])
   @@map("content_bytes")
 }
 
