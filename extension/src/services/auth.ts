@@ -25,7 +25,8 @@ declare const chrome: {
 } | undefined;
 
 // API Configuration
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+// Production URL as fallback - override with VITE_API_URL for local development
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://api.byteletters.app';
 
 // Storage keys
 const AUTH_KEYS = {
