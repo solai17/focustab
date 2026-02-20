@@ -101,8 +101,18 @@ Return a JSON array with evaluations for each byte:
 
 IMPORTANT: Return ONLY the JSON array, no markdown or explanation.`;
 
+const MAX_RETRIES = 5;
+const INITIAL_RETRY_DELAY_MS = 2000;
+
 /**
- * Audit a batch of content bytes using Claude Opus
+ * Sleep helper
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Audit a batch of content bytes using Claude with retry logic
  */
 async function auditBatch(bytes: ByteForAudit[]): Promise<AuditResult[]> {
   // Format bytes as a table for efficient processing
@@ -110,37 +120,50 @@ async function auditBatch(bytes: ByteForAudit[]): Promise<AuditResult[]> {
     `[${i + 1}] ID: ${b.id}\nType: ${b.type} | Category: ${b.category}${b.author ? ` | Author: ${b.author}` : ''}\nContent: "${b.content}"\n`
   ).join('\n---\n');
 
-  try {
-    const message = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 4096,
-      messages: [
-        {
-          role: 'user',
-          content: `${AUDIT_PROMPT}
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const message = await anthropic.messages.create({
+        model: MODEL,
+        max_tokens: 4096,
+        messages: [
+          {
+            role: 'user',
+            content: `${AUDIT_PROMPT}
 
 Here are ${bytes.length} content bytes to evaluate:
 
 ${bytesTable}`,
-        },
-      ],
-    });
+          },
+        ],
+      });
 
-    const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
+      const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
 
-    // Parse JSON response
-    const jsonMatch = responseText.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-      console.error('Failed to parse audit response:', responseText.slice(0, 200));
+      // Parse JSON response
+      const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) {
+        console.error('Failed to parse audit response:', responseText.slice(0, 200));
+        return [];
+      }
+
+      const results: AuditResult[] = JSON.parse(jsonMatch[0]);
+      return results;
+    } catch (error: any) {
+      const isRetryable = error?.status === 529 || error?.status === 503 || error?.status === 500;
+
+      if (isRetryable && attempt < MAX_RETRIES) {
+        const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt - 1);
+        console.log(`  ⏳ API overloaded (attempt ${attempt}/${MAX_RETRIES}), retrying in ${delay / 1000}s...`);
+        await sleep(delay);
+        continue;
+      }
+
+      console.error(`Audit batch error (attempt ${attempt}):`, error?.message || error);
       return [];
     }
-
-    const results: AuditResult[] = JSON.parse(jsonMatch[0]);
-    return results;
-  } catch (error) {
-    console.error('Audit batch error:', error);
-    return [];
   }
+
+  return [];
 }
 
 /**
