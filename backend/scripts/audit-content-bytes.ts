@@ -207,7 +207,7 @@ async function runAudit() {
 
       if (result.score < MIN_QUALITY_SCORE) {
         toDelete.push(result.id);
-        // Mark as audited even if it will be deleted
+        // Mark as audited and then delete immediately
         if (!DRY_RUN) {
           await prisma.contentByte.update({
             where: { id: result.id },
@@ -216,23 +216,33 @@ async function runAudit() {
               isAudited: true,
             },
           });
+          // Delete immediately instead of waiting until end
+          await prisma.contentByte.delete({
+            where: { id: result.id },
+          });
+          console.log(`  ❌ [${result.score.toFixed(2)}] DELETED: "${byte.content.slice(0, 50)}..." - ${result.reason}`);
+        } else {
+          console.log(`  ❌ [${result.score.toFixed(2)}] "${byte.content.slice(0, 50)}..." - ${result.reason}`);
         }
-        console.log(`  ❌ [${result.score.toFixed(2)}] "${byte.content.slice(0, 50)}..." - ${result.reason}`);
       } else {
         kept++;
         // Update quality score and mark as audited
         if (!DRY_RUN) {
-          await prisma.contentByte.update({
+          const updated_byte = await prisma.contentByte.update({
             where: { id: result.id },
             data: {
               qualityScore: result.score,
               isAudited: true,
             },
           });
+          // Verify the update happened
+          if (updated_byte.qualityScore !== result.score) {
+            console.log(`  ⚠️ UPDATE FAILED for ${result.id}`);
+          }
         }
         updated++;
         if (result.score >= 0.85) {
-          console.log(`  ✓ [${result.score.toFixed(2)}] "${byte.content.slice(0, 50)}..." - ${result.reason}`);
+          console.log(`  ✓ [${result.score.toFixed(2)}] SAVED: "${byte.content.slice(0, 50)}..." - ${result.reason}`);
         }
       }
     }
@@ -261,11 +271,7 @@ async function runAudit() {
       console.log('\n🔍 DRY RUN - No bytes were deleted');
       console.log(`Would delete ${toDelete.length} bytes`);
     } else {
-      console.log(`\nDeleting ${toDelete.length} low-quality bytes...`);
-      const deleteResult = await prisma.contentByte.deleteMany({
-        where: { id: { in: toDelete } },
-      });
-      console.log(`✓ Deleted ${deleteResult.count} bytes`);
+      console.log(`\n✓ Already deleted ${toDelete.length} low-quality bytes during processing`);
     }
   }
 
