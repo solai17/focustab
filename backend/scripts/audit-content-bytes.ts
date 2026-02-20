@@ -33,7 +33,7 @@ const anthropic = new Anthropic({
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '50', 10);
 const MIN_QUALITY_SCORE = parseFloat(process.env.MIN_QUALITY || '0.6');
 const DRY_RUN = process.env.DRY_RUN === 'true';
-const MODEL = 'claude-sonnet-4-6-20250131'; // Claude Sonnet 4.6
+const MODEL = 'claude-sonnet-4-6'; // Claude Sonnet 4.6
 
 interface ByteForAudit {
   id: string;
