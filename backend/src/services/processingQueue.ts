@@ -2,12 +2,12 @@
  * Processing Queue Service
  *
  * Manages the queue of newsletters waiting to be processed by AI.
- * Respects Gemini API rate limits (10 RPM, ~500 RPD for free tier).
+ * Uses Claude Sonnet 4 for content extraction.
  *
  * Flow:
  * 1. Webhook stores email with status "pending"
  * 2. Cron job calls processBatch() every 5 minutes
- * 3. Each batch processes up to 10 editions (respecting RPM)
+ * 3. Each batch processes up to 10 editions
  * 4. Status updated to "completed" or "failed"
  */
 
@@ -15,9 +15,9 @@ import { prisma } from './db';
 import { processEditionWithClaude } from './claude';
 
 // Configuration
-const MAX_BATCH_SIZE = 10; // Max editions per batch (respecting 10 RPM)
+const MAX_BATCH_SIZE = 10; // Max editions per batch
 const MAX_ATTEMPTS = 3;    // Max retry attempts before marking as failed
-const PROCESSING_DELAY_MS = 6500; // Delay between requests (~10 RPM = 6s between)
+const PROCESSING_DELAY_MS = 2000; // Delay between requests (2s for safety)
 
 export type ProcessingStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
@@ -121,7 +121,7 @@ export async function processEdition(
 
     console.log(`[Queue] Processing: "${subject}" from ${source.name}${needSourceInfo ? ' (extracting source info)' : ''}`);
 
-    // Process with AI (Gemini primary, Claude fallback)
+    // Process with Claude AI
     // Pass extractSourceInfo flag if source doesn't have website yet
     const result = await processEditionWithClaude(subject, textContent, source.name, needSourceInfo);
 

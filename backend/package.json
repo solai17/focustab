@@ -15,7 +15,9 @@
     "db:cleanup": "ts-node scripts/cleanup-db.ts",
     "db:seed": "ts-node scripts/seed-content.ts",
     "scrape": "ts-node scripts/scrape-newsletters.ts",
-    "scrape:test": "ts-node scripts/test-scrape.ts"
+    "scrape:test": "ts-node scripts/test-scrape.ts",
+    "audit": "ts-node scripts/audit-content-bytes.ts",
+    "audit:dry": "DRY_RUN=true ts-node scripts/audit-content-bytes.ts"
   },
   "keywords": [
     "byteletters",
@@ -26,7 +28,6 @@
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",
-    "@google/genai": "^1.34.0",
     "@prisma/client": "^5.10.0",
     "prisma": "^5.10.0",
     "axios": "^1.13.2",
