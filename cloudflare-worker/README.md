@@ -26,7 +26,7 @@ npm install
 Update `wrangler.toml` if your API URL differs:
 ```toml
 [vars]
-API_URL = "https://api.byteletters.app"
+API_URL = "https://antletters-api.onrender.com"
 ```
 
 ### 3. Set Secrets
@@ -120,7 +120,7 @@ npx wrangler deployments list
 
 | Variable | Description |
 |----------|-------------|
-| `API_URL` | ByteLetters API URL (default: api.byteletters.app) |
+| `API_URL` | ByteLetters API URL (default: antletters-api.onrender.com) |
 | `WEBHOOK_SECRET` | Shared secret for webhook authentication |
 
 ## Troubleshooting

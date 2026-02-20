@@ -484,9 +484,9 @@ function Sources({ onClose }) {
                 │
                 ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           RAILWAY                                        │
+│                           RENDER                                         │
 ├─────────────────────────────────────────────────────────────────────────┤
-│  API Server (api.byteletters.app)                                        │
+│  API Server (antletters-api.onrender.com)                                │
 │  └── Node.js + Express + Prisma                                          │
 │  └── /auth, /feed, /newsletters, /admin, /webhooks                       │
 └─────────────────────────────────────────────────────────────────────────┘

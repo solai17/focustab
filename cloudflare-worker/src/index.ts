@@ -45,7 +45,7 @@ export default {
             };
 
             // Forward to backend API
-            const apiUrl = env.API_URL || 'https://api.byteletters.app';
+            const apiUrl = env.API_URL || 'https://antletters-api.onrender.com';
             const webhookUrl = `${apiUrl}/webhooks/cloudflare`;
 
             const headers: Record<string, string> = {
