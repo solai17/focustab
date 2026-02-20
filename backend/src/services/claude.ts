@@ -1,6 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ProcessedEdition, ExtractedByte, ByteType, ByteCategory } from '../types';
-import { extractBytesWithGemini, isGeminiAvailable, NewsletterInfo, ExtractionResult, getGeminiQuotaStatus } from './gemini';
 import { parseAIResponse, validateBytes } from '../utils/jsonParser';
 
 // Extended result type that includes newsletter info and model tracking
@@ -9,15 +8,17 @@ export interface ProcessedEditionWithSourceInfo extends ProcessedEdition {
   modelUsed?: string; // Track which AI model processed this
 }
 
+export interface NewsletterInfo {
+  name: string;
+  website: string | null;
+}
+
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// Model priority: Gemini (free, 20/day) → Claude Sonnet (paid fallback)
-const USE_GEMINI_PRIMARY = process.env.USE_GEMINI_PRIMARY !== 'false';
-
 // =============================================================================
-// v2.0 CONTENT BYTE EXTRACTION
+// v3.0 CONTENT BYTE EXTRACTION (Anthropic Only)
 // =============================================================================
 
 const BYTE_EXTRACTION_PROMPT = `You are a master curator extracting transformative insights from newsletters. Your mission: find the ONE idea that could change how someone thinks or acts today.
@@ -82,9 +83,7 @@ SCORING:
 Return ONLY valid JSON, no markdown or explanation.`;
 
 /**
- * Process newsletter edition with model fallback:
- * 1. Gemini (free, 20/day)
- * 2. Claude Sonnet 4 (paid fallback)
+ * Process newsletter edition with Claude Sonnet 4
  */
 export async function processEditionWithClaude(
   subject: string,
@@ -92,50 +91,8 @@ export async function processEditionWithClaude(
   sourceName: string,
   extractSourceInfo: boolean = false
 ): Promise<ProcessedEditionWithSourceInfo> {
-  const quotaStatus = getGeminiQuotaStatus();
-  console.log(`[AI] Model selection - Gemini quota: ${quotaStatus.remaining}/${quotaStatus.limit} remaining`);
-
-  // =========================================================================
-  // STEP 1: Try Gemini 3 Flash (highest quality, 20 requests/day)
-  // =========================================================================
-  if (USE_GEMINI_PRIMARY && isGeminiAvailable()) {
-    try {
-      console.log(`[AI] Using Gemini 3 Flash for: ${sourceName}${extractSourceInfo ? ' (with source info)' : ''}`);
-      const geminiResult = await extractBytesWithGemini(textContent, sourceName, extractSourceInfo);
-
-      // Check if quota was exceeded
-      if (geminiResult.quotaExceeded) {
-        console.log('[AI] Gemini daily quota exceeded, falling back to Claude...');
-      } else if (geminiResult.bytes.length > 0) {
-        const result: ProcessedEditionWithSourceInfo = {
-          summary: `Processed ${geminiResult.bytes.length} insights from ${sourceName}`,
-          readTimeMinutes: Math.ceil(textContent.split(/\s+/).length / 200),
-          bytes: geminiResult.bytes.map((byte) => ({
-            ...byte,
-            type: validateByteType(byte.type),
-            category: validateByteCategory(byte.category),
-          })),
-          modelUsed: geminiResult.modelUsed,
-        };
-
-        if (geminiResult.newsletterInfo) {
-          result.newsletterInfo = geminiResult.newsletterInfo;
-        }
-
-        return result;
-      } else {
-        console.log('[AI] Gemini returned no bytes, falling back to Claude...');
-      }
-    } catch (error) {
-      console.error('[AI] Gemini failed, falling back to Claude:', error);
-    }
-  }
-
-  // =========================================================================
-  // STEP 2: Fallback to Claude Sonnet 4 (paid)
-  // =========================================================================
   try {
-    console.log(`[AI] Using Claude Sonnet 4 (paid) for: ${sourceName}`);
+    console.log(`[AI] Using Claude Sonnet 4 for: ${sourceName}`);
     const truncatedContent = textContent.slice(0, 20000);
 
     const message = await anthropic.messages.create({
@@ -181,7 +138,7 @@ ${truncatedContent}`,
     };
   } catch (error) {
     console.error('Error processing edition with Claude:', error);
-    throw new Error(`Failed to process with AI (Gemini → Claude): ${error instanceof Error ? error.message : 'Unknown error'}`);
+    throw new Error(`Failed to process with Claude: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
