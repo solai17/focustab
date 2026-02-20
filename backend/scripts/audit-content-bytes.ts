@@ -160,11 +160,11 @@ async function runAudit() {
   const totalBytes = await prisma.contentByte.count();
   console.log(`\nTotal content bytes: ${totalBytes}`);
 
-  // Get bytes that haven't been audited yet (qualityScore = 0)
+  // Get bytes that haven't been audited yet (isAudited = false)
   // To re-audit everything, use: REAUDIT_ALL=true npm run audit
   const reauditAll = process.env.REAUDIT_ALL === 'true';
   const unauditedBytes = await prisma.contentByte.findMany({
-    where: reauditAll ? {} : { qualityScore: 0 },
+    where: reauditAll ? {} : { isAudited: false },
     select: {
       id: true,
       content: true,
@@ -207,14 +207,27 @@ async function runAudit() {
 
       if (result.score < MIN_QUALITY_SCORE) {
         toDelete.push(result.id);
-        console.log(`  ❌ [${result.score.toFixed(2)}] "${byte.content.slice(0, 50)}..." - ${result.reason}`);
-      } else {
-        kept++;
-        // Update quality score in database
+        // Mark as audited even if it will be deleted
         if (!DRY_RUN) {
           await prisma.contentByte.update({
             where: { id: result.id },
-            data: { qualityScore: result.score },
+            data: {
+              qualityScore: result.score,
+              isAudited: true,
+            },
+          });
+        }
+        console.log(`  ❌ [${result.score.toFixed(2)}] "${byte.content.slice(0, 50)}..." - ${result.reason}`);
+      } else {
+        kept++;
+        // Update quality score and mark as audited
+        if (!DRY_RUN) {
+          await prisma.contentByte.update({
+            where: { id: result.id },
+            data: {
+              qualityScore: result.score,
+              isAudited: true,
+            },
           });
         }
         updated++;
