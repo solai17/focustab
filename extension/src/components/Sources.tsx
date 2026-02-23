@@ -309,32 +309,32 @@ export function Sources({ onClose }: SourcesProps) {
           )}
         </div>
 
-        {/* Footer - Recommend Newsletter */}
-        <div className="p-4 border-t border-ash bg-slate/30">
+        {/* Footer - Recommend Newsletter (Prominent CTA) */}
+        <div className="p-4 border-t border-life/30 bg-gradient-to-r from-life/10 via-life/5 to-transparent">
           {!showRecommendForm ? (
             <button
               onClick={() => { setShowRecommendForm(true); setRecResult(null); }}
-              className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg bg-ash/50 hover:bg-ash text-smoke hover:text-pearl transition-colors text-sm"
+              className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-life/20 hover:bg-life/30 border border-life/40 hover:border-life/60 text-life hover:text-white transition-all duration-200"
             >
-              <MessageSquarePlus className="w-4 h-4" />
-              <span>Know a great newsletter? Recommend it to us!</span>
+              <MessageSquarePlus className="w-5 h-5" />
+              <span className="font-medium">Know a great newsletter? Recommend it!</span>
             </button>
           ) : (
             <div className="space-y-3">
-              <p className="text-sm text-pearl font-medium">Suggest a newsletter for ByteLetters</p>
+              <p className="text-sm text-pearl font-semibold">Suggest a newsletter for ByteLetters</p>
               <input
                 type="text"
                 value={recName}
                 onChange={(e) => setRecName(e.target.value)}
                 placeholder="Newsletter name"
-                className="w-full px-3 py-2 bg-obsidian border border-ash rounded-lg text-pearl text-sm placeholder-smoke/50 focus:border-life focus:outline-none"
+                className="w-full px-3 py-2.5 bg-obsidian border border-ash rounded-lg text-pearl text-sm placeholder-smoke/50 focus:border-life focus:outline-none"
               />
               <input
                 type="url"
                 value={recUrl}
                 onChange={(e) => setRecUrl(e.target.value)}
                 placeholder="Newsletter URL (e.g., https://...)"
-                className="w-full px-3 py-2 bg-obsidian border border-ash rounded-lg text-pearl text-sm placeholder-smoke/50 focus:border-life focus:outline-none"
+                className="w-full px-3 py-2.5 bg-obsidian border border-ash rounded-lg text-pearl text-sm placeholder-smoke/50 focus:border-life focus:outline-none"
               />
               {recResult && (
                 <p className={`text-xs ${recResult.type === 'success' ? 'text-life' : 'text-rose'}`}>
@@ -344,14 +344,14 @@ export function Sources({ onClose }: SourcesProps) {
               <div className="flex gap-2">
                 <button
                   onClick={() => { setShowRecommendForm(false); setRecResult(null); }}
-                  className="flex-1 py-2 px-3 rounded-lg bg-ash/50 text-smoke hover:text-pearl text-sm transition-colors"
+                  className="flex-1 py-2.5 px-3 rounded-lg bg-ash/50 text-smoke hover:text-pearl text-sm transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={submitRecommendation}
                   disabled={recSubmitting || !recName.trim() || !recUrl.trim()}
-                  className="flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-life text-void text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg bg-life text-void text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {recSubmitting ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
