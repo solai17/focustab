@@ -47,6 +47,7 @@ function userToProfile(user: AuthUser): UserProfile {
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
+  const [isFetchingNext, setIsFetchingNext] = useState(false); // Instant loading state for Next button
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [currentByte, setCurrentByte] = useState<ContentByte | null>(null);
   const [savedBytes, setSavedBytes] = useState<ContentByte[]>([]);
@@ -373,8 +374,11 @@ function App() {
     }
   }, []);
 
-  // Handle next byte
+  // Handle next byte - instant UI response with background fetch
   const handleNext = useCallback(async () => {
+    // Set loading state IMMEDIATELY for instant feedback
+    setIsFetchingNext(true);
+
     // If showing community bytes, cycle through them
     if (showingCommunityBytes && communityBytes.length > 0) {
       const nextIndex = (communityByteIndex + 1) % communityBytes.length;
@@ -382,17 +386,19 @@ function App() {
       setCurrentByte(communityBytes[nextIndex]);
       setQueueSize(communityBytes.length - nextIndex - 1);
       setIsCommunityContent(true);
+      setIsFetchingNext(false);
       return;
     }
 
     if (usingMockData.current) {
-      // Offline/demo mode - use mock data
+      // Offline/demo mode - use mock data (instant)
       const byte = getNextMockByte();
       setCurrentByte(byte);
       setQueueSize(prev => Math.max(0, prev - 1));
       setIsCommunityContent(true);
+      setIsFetchingNext(false);
     } else {
-      // Fetch from API
+      // Fetch from API in background
       try {
         const result = await fetchNextByte();
         if (result.byte) {
@@ -416,6 +422,8 @@ function App() {
         setCurrentByte(byte);
         setQueueSize(SAMPLE_BYTES.length);
         setIsCommunityContent(true);
+      } finally {
+        setIsFetchingNext(false);
       }
     }
   }, [showingCommunityBytes, communityBytes, communityByteIndex]);
@@ -579,6 +587,7 @@ function App() {
               onNext={handleNext}
               onView={handleView}
               queueSize={queueSize}
+              isLoadingNext={isFetchingNext}
             />
           ) : (
             <div className="text-center py-16 bg-obsidian/80 backdrop-blur-sm rounded-2xl p-8 border border-ash/30">

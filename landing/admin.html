@@ -309,6 +309,111 @@
       color: var(--smoke);
     }
 
+    /* Insights List */
+    .insights-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .insight-card {
+      background: var(--slate);
+      border: 1px solid var(--ash);
+      border-radius: 8px;
+      padding: 1rem;
+      transition: all 0.2s;
+    }
+
+    .insight-card:hover {
+      border-color: var(--life);
+    }
+
+    .insight-card.hidden {
+      opacity: 0.6;
+      background: var(--obsidian);
+    }
+
+    .insight-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 0.75rem;
+    }
+
+    .insight-meta {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .insight-content {
+      color: var(--pearl);
+      font-size: 1rem;
+      line-height: 1.6;
+      margin-bottom: 0.75rem;
+      cursor: pointer;
+    }
+
+    .insight-content.collapsed {
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .insight-content.expanded {
+      -webkit-line-clamp: unset;
+    }
+
+    .insight-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--ash);
+    }
+
+    .insight-stats {
+      display: flex;
+      gap: 1rem;
+      font-size: 0.85rem;
+      color: var(--smoke);
+    }
+
+    .insight-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .btn-hide {
+      background: rgba(251, 191, 36, 0.2);
+      color: var(--amber);
+      border: none;
+      padding: 0.4rem 0.8rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+
+    .btn-hide:hover {
+      background: rgba(251, 191, 36, 0.3);
+    }
+
+    .btn-show {
+      background: rgba(52, 211, 153, 0.2);
+      color: var(--life);
+      border: none;
+      padding: 0.4rem 0.8rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+
+    .btn-show:hover {
+      background: rgba(52, 211, 153, 0.3);
+    }
+
     /* Tab Content */
     .tab-content {
       display: none;
@@ -461,9 +566,13 @@
     <div class="login-box">
       <h1>ByteLetters Admin</h1>
       <p style="text-align: center; color: var(--smoke); margin-bottom: 1.5rem;">
-        Sign in with your Google account
+        Sign in with your admin credentials
       </p>
-      <button onclick="loginWithGoogle()">Sign in with Google</button>
+      <form id="login-form" onsubmit="handleLogin(event)">
+        <input type="email" id="login-email" placeholder="Email" required autocomplete="email">
+        <input type="password" id="login-password" placeholder="Password" required autocomplete="current-password">
+        <button type="submit" id="login-btn">Sign In</button>
+      </form>
       <p class="login-error" id="login-error"></p>
     </div>
   </div>
@@ -486,7 +595,6 @@
         <button class="nav-tab active" data-tab="overview">Overview</button>
         <button class="nav-tab" data-tab="sources">Newsletter Sources</button>
         <button class="nav-tab" data-tab="insights">Insights</button>
-        <button class="nav-tab" data-tab="forwarded">Forwarded Emails</button>
         <button class="nav-tab" data-tab="scraping">Scraping</button>
       </nav>
 
@@ -523,69 +631,60 @@
             </tbody>
           </table>
         </div>
+
+        <!-- Customer Recommendations Section -->
+        <div class="table-container" style="margin-top: 2rem;">
+          <div class="table-header">
+            <h2>Customer Recommendations</h2>
+            <span style="color: var(--smoke); font-size: 0.9rem;">Newsletters suggested by users</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Newsletter Name</th>
+                <th>URL</th>
+                <th>Recommended By</th>
+                <th>Date</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="recommendations-table">
+              <tr><td colspan="5" class="empty-state">No recommendations yet</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <!-- Insights Tab -->
       <div id="tab-insights" class="tab-content">
         <div class="filters">
-          <select id="insights-status-filter" onchange="loadInsights()">
-            <option value="pending">Pending Moderation</option>
-            <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
-            <option value="all">All Status</option>
+          <select id="insights-visibility-filter" onchange="loadInsights()">
+            <option value="visible">Visible to Users</option>
+            <option value="hidden">Hidden</option>
+            <option value="all">All Insights</option>
           </select>
           <select id="insights-source-filter" onchange="loadInsights()">
             <option value="">All Sources</option>
+          </select>
+          <select id="insights-audit-filter" onchange="loadInsights()">
+            <option value="all">All (Audited & Unaudited)</option>
+            <option value="audited">Audited Only</option>
+            <option value="unaudited">Unaudited Only</option>
           </select>
         </div>
         <div class="table-container">
           <div class="table-header">
             <h2>Insights</h2>
             <div class="table-actions">
-              <button class="btn btn-primary" onclick="bulkApprove()">Approve Selected</button>
-              <button class="btn btn-danger" onclick="bulkReject()">Reject Selected</button>
+              <button class="btn btn-primary" onclick="triggerAuditInsights()" id="audit-insights-btn">
+                Audit Unaudited Insights
+              </button>
+              <span id="unaudited-count" style="margin-left: 10px; color: var(--smoke);"></span>
             </div>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th><input type="checkbox" id="select-all-insights" onchange="toggleSelectAll()"></th>
-                <th>Content</th>
-                <th>Source</th>
-                <th>Type</th>
-                <th>Quality</th>
-                <th>Votes</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="insights-table">
-              <tr><td colspan="8" class="loading"><div class="spinner"></div></td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Forwarded Emails Tab -->
-      <div id="tab-forwarded" class="tab-content">
-        <div class="table-container">
-          <div class="table-header">
-            <h2>Forwarded Emails (Pending Review)</h2>
+          <div id="insights-list" class="insights-list">
+            <div class="loading"><div class="spinner"></div><br>Loading insights...</div>
           </div>
-          <table>
-            <thead>
-              <tr>
-                <th>From</th>
-                <th>Subject</th>
-                <th>Received</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="forwarded-table">
-              <tr><td colspan="5" class="loading"><div class="spinner"></div></td></tr>
-            </tbody>
-          </table>
         </div>
       </div>
 
@@ -616,14 +715,15 @@
     </div>
   </div>
 
-  <!-- Add Source Modal -->
+  <!-- Add/Edit Source Modal -->
   <div class="modal-overlay" id="add-source-modal">
     <div class="modal">
       <div class="modal-header">
-        <h2>Add Newsletter Source</h2>
+        <h2 id="source-modal-title">Add Newsletter Source</h2>
         <button class="modal-close" onclick="closeModal('add-source-modal')">&times;</button>
       </div>
       <div class="modal-body">
+        <input type="hidden" id="source-id" value="">
         <div class="form-group">
           <label>Newsletter Name *</label>
           <input type="text" id="source-name" placeholder="e.g., James Clear 3-2-1">
@@ -635,6 +735,7 @@
         <div class="form-group">
           <label>Archive URL (for scraping)</label>
           <input type="url" id="source-archive" placeholder="e.g., https://example.com/archive">
+          <small style="color: var(--smoke);">Set this URL to enable scraping</small>
         </div>
         <div class="form-group">
           <label>Website</label>
@@ -653,13 +754,26 @@
             <option value="tech">Tech</option>
             <option value="life">Life</option>
             <option value="creativity">Creativity</option>
+            <option value="leadership">Leadership</option>
+            <option value="finance">Finance</option>
+            <option value="health">Health</option>
             <option value="general">General</option>
           </select>
+        </div>
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="source-curated" checked> Curated (visible to users)
+          </label>
+        </div>
+        <div class="form-group">
+          <label>
+            <input type="checkbox" id="source-scraping-enabled"> Enable auto-scraping
+          </label>
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeModal('add-source-modal')">Cancel</button>
-        <button class="btn btn-primary" onclick="saveSource()">Add Source</button>
+        <button class="btn btn-primary" id="source-save-btn" onclick="saveSource()">Add Source</button>
       </div>
     </div>
   </div>
@@ -689,35 +803,45 @@
     });
 
     // Auth functions
-    async function loginWithGoogle() {
-      // For now, use a simple token-based login
-      // In production, integrate with Google Identity
-      const email = prompt('Enter your admin email:');
-      if (!email) return;
+    async function handleLogin(event) {
+      event.preventDefault();
+
+      const email = document.getElementById('login-email').value.trim();
+      const password = document.getElementById('login-password').value;
+      const loginBtn = document.getElementById('login-btn');
+
+      if (!email || !password) {
+        showError('Please enter email and password');
+        return;
+      }
+
+      // Disable button during request
+      loginBtn.disabled = true;
+      loginBtn.textContent = 'Signing in...';
+      showError(''); // Clear any previous errors
 
       try {
-        // Try to authenticate with the existing auth system
-        const response = await fetch(`${API_URL}/auth/google`, {
+        const response = await fetch(`${API_URL}/auth/admin-login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            googleEmail: email,
-            googleId: 'admin-' + Date.now(),
-            name: email.split('@')[0],
-          }),
+          body: JSON.stringify({ email, password }),
         });
 
         const data = await response.json();
-        if (data.token) {
+
+        if (response.ok && data.token) {
           authToken = data.token;
           currentUser = data.user;
           localStorage.setItem('admin_token', authToken);
           showDashboard();
         } else {
-          showError('Authentication failed');
+          showError(data.error || 'Authentication failed');
         }
       } catch (error) {
         showError('Failed to connect to server');
+      } finally {
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Sign In';
       }
     }
 
@@ -771,9 +895,11 @@
       // Load data for tab
       switch (tabId) {
         case 'overview': loadStats(); break;
-        case 'sources': loadSources(); break;
+        case 'sources':
+          loadSources();
+          loadRecommendations();
+          break;
         case 'insights': loadInsights(); break;
-        case 'forwarded': loadForwarded(); break;
         case 'scraping': loadScraping(); break;
       }
     }
@@ -878,46 +1004,170 @@
       }
     }
 
-    async function loadInsights() {
+    async function loadRecommendations() {
       try {
-        const status = document.getElementById('insights-status-filter').value;
-        const sourceId = document.getElementById('insights-source-filter').value;
+        const data = await apiCall('/admin/recommendations?status=pending');
+        const tbody = document.getElementById('recommendations-table');
 
-        let url = `/admin/insights?status=${status}&limit=50`;
-        if (sourceId) url += `&sourceId=${sourceId}`;
-
-        const data = await apiCall(url);
-        const tbody = document.getElementById('insights-table');
-
-        if (data.insights.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="8" class="empty-state"><h3>No insights found</h3><p>Try changing the filters</p></td></tr>';
+        if (!data.recommendations || data.recommendations.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No pending recommendations</td></tr>';
           return;
         }
 
-        tbody.innerHTML = data.insights.map(insight => `
+        tbody.innerHTML = data.recommendations.map(rec => `
           <tr>
-            <td><input type="checkbox" class="insight-checkbox" value="${insight.id}"></td>
-            <td class="content-preview" title="${insight.content}">${insight.content}</td>
-            <td>${insight.source?.name || 'Unknown'}</td>
-            <td><span class="badge badge-info">${insight.type}</span></td>
-            <td>${(insight.qualityScore * 100).toFixed(0)}%</td>
+            <td><strong>${escapeHtml(rec.name)}</strong></td>
+            <td><a href="${escapeHtml(rec.url)}" target="_blank" style="color: var(--life);">${escapeHtml(rec.url)}</a></td>
+            <td>${rec.userEmail || 'Anonymous'}</td>
+            <td>${new Date(rec.createdAt).toLocaleDateString()}</td>
             <td>
-              <span style="color: var(--life);">+${insight.engagement.upvotes}</span> /
-              <span style="color: var(--rose);">-${insight.engagement.downvotes}</span>
-            </td>
-            <td>
-              <span class="badge ${getStatusBadge(insight.moderationStatus)}">${insight.moderationStatus}</span>
-            </td>
-            <td>
-              ${insight.moderationStatus === 'pending' ? `
-                <button class="btn btn-primary" onclick="moderateInsight('${insight.id}', 'approve')">Approve</button>
-                <button class="btn btn-danger" onclick="moderateInsight('${insight.id}', 'reject')">Reject</button>
-              ` : ''}
+              <button class="btn btn-primary" onclick="approveRecommendation('${rec.id}')">Add as Source</button>
+              <button class="btn btn-danger" onclick="rejectRecommendation('${rec.id}')">Reject</button>
             </td>
           </tr>
         `).join('');
       } catch (error) {
+        console.error('Failed to load recommendations:', error);
+      }
+    }
+
+    async function approveRecommendation(id) {
+      const category = prompt('Select category for this newsletter:', 'general');
+      if (category === null) return; // User cancelled
+
+      try {
+        await apiCall(`/admin/recommendations/${id}/approve`, {
+          method: 'POST',
+          body: JSON.stringify({ category }),
+        });
+        alert('Recommendation approved and added as a new source!');
+        loadSources();
+        loadRecommendations();
+      } catch (error) {
+        alert('Failed to approve recommendation');
+      }
+    }
+
+    async function rejectRecommendation(id) {
+      const reason = prompt('Reason for rejection (optional):');
+      if (reason === null) return; // User cancelled
+
+      try {
+        await apiCall(`/admin/recommendations/${id}/reject`, {
+          method: 'POST',
+          body: JSON.stringify({ reason }),
+        });
+        loadRecommendations();
+      } catch (error) {
+        alert('Failed to reject recommendation');
+      }
+    }
+
+    async function loadInsights() {
+      try {
+        const visibility = document.getElementById('insights-visibility-filter').value;
+        const sourceId = document.getElementById('insights-source-filter').value;
+        const auditFilter = document.getElementById('insights-audit-filter').value;
+
+        let url = `/admin/insights?limit=100`;
+        if (sourceId) url += `&sourceId=${sourceId}`;
+        if (visibility === 'hidden') url += `&hidden=true`;
+        else if (visibility === 'visible') url += `&hidden=false`;
+        if (auditFilter === 'audited') url += `&audited=true`;
+        else if (auditFilter === 'unaudited') url += `&audited=false`;
+
+        const data = await apiCall(url);
+        const container = document.getElementById('insights-list');
+
+        // Update unaudited count
+        const unauditedCount = data.unauditedCount || 0;
+        document.getElementById('unaudited-count').textContent =
+          unauditedCount > 0 ? `(${unauditedCount} unaudited)` : '';
+
+        if (data.insights.length === 0) {
+          container.innerHTML = '<div class="empty-state"><h3>No insights found</h3><p>Try changing the filters</p></div>';
+          return;
+        }
+
+        container.innerHTML = data.insights.map(insight => `
+          <div class="insight-card ${insight.isHidden ? 'hidden' : ''}" id="insight-${insight.id}">
+            <div class="insight-header">
+              <div class="insight-meta">
+                <span class="badge badge-info">${insight.type}</span>
+                <span class="badge ${insight.isAudited ? 'badge-success' : 'badge-warning'}">
+                  ${insight.isAudited ? 'Audited' : 'Unaudited'}
+                </span>
+                ${insight.isHidden ? '<span class="badge badge-danger">Hidden</span>' : ''}
+                <span style="color: var(--smoke);">Quality: ${(insight.qualityScore * 100).toFixed(0)}%</span>
+              </div>
+              <span style="color: var(--smoke); font-size: 0.85rem;">
+                ${insight.source?.name || 'Unknown Source'}
+              </span>
+            </div>
+            <div class="insight-content collapsed" onclick="toggleInsightContent(this)">
+              ${escapeHtml(insight.content)}
+            </div>
+            <small style="color: var(--smoke); cursor: pointer;" onclick="toggleInsightContent(this.previousElementSibling)">
+              Click to expand/collapse
+            </small>
+            <div class="insight-footer">
+              <div class="insight-stats">
+                <span style="color: var(--life);">+${insight.engagement?.upvotes || 0} upvotes</span>
+                <span style="color: var(--rose);">-${insight.engagement?.downvotes || 0} downvotes</span>
+                <span>${insight.engagement?.viewCount || 0} views</span>
+              </div>
+              <div class="insight-actions">
+                ${insight.isHidden
+                  ? `<button class="btn-show" onclick="toggleInsightVisibility('${insight.id}', false)">Show</button>`
+                  : `<button class="btn-hide" onclick="toggleInsightVisibility('${insight.id}', true)">Hide</button>`
+                }
+              </div>
+            </div>
+          </div>
+        `).join('');
+      } catch (error) {
         console.error('Failed to load insights:', error);
+      }
+    }
+
+    function toggleInsightContent(el) {
+      el.classList.toggle('collapsed');
+      el.classList.toggle('expanded');
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    async function toggleInsightVisibility(insightId, hide) {
+      try {
+        await apiCall(`/admin/insights/${insightId}/visibility`, {
+          method: 'POST',
+          body: JSON.stringify({ hidden: hide }),
+        });
+        loadInsights();
+      } catch (error) {
+        alert('Failed to update insight visibility');
+      }
+    }
+
+    async function triggerAuditInsights() {
+      const btn = document.getElementById('audit-insights-btn');
+      btn.disabled = true;
+      btn.textContent = 'Starting audit...';
+
+      try {
+        const result = await apiCall('/admin/insights/trigger-audit', {
+          method: 'POST',
+        });
+        alert(`Audit started! ${result.message || 'Check console for progress.'}`);
+      } catch (error) {
+        alert('Failed to trigger audit. Run the audit script manually: npm run audit');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Audit Unaudited Insights';
       }
     }
 
@@ -992,7 +1242,50 @@
 
     // Modal functions
     function showAddSourceModal() {
+      // Clear form for new source
+      document.getElementById('source-id').value = '';
+      document.getElementById('source-name').value = '';
+      document.getElementById('source-email').value = '';
+      document.getElementById('source-archive').value = '';
+      document.getElementById('source-website').value = '';
+      document.getElementById('source-description').value = '';
+      document.getElementById('source-category').value = 'wisdom';
+      document.getElementById('source-curated').checked = true;
+      document.getElementById('source-scraping-enabled').checked = false;
+
+      // Update modal title and button
+      document.getElementById('source-modal-title').textContent = 'Add Newsletter Source';
+      document.getElementById('source-save-btn').textContent = 'Add Source';
+
       document.getElementById('add-source-modal').classList.add('active');
+    }
+
+    async function editSource(sourceId) {
+      try {
+        // Fetch source data from API
+        const data = await apiCall(`/admin/sources/${sourceId}`);
+        const source = data.source;
+
+        // Populate form with source data
+        document.getElementById('source-id').value = source.id;
+        document.getElementById('source-name').value = source.name || '';
+        document.getElementById('source-email').value = source.senderEmail || '';
+        document.getElementById('source-archive').value = source.archiveUrl || '';
+        document.getElementById('source-website').value = source.website || '';
+        document.getElementById('source-description').value = source.description || '';
+        document.getElementById('source-category').value = source.category || 'general';
+        document.getElementById('source-curated').checked = source.isCurated !== false;
+        document.getElementById('source-scraping-enabled').checked = source.scrapingEnabled === true;
+
+        // Update modal title and button
+        document.getElementById('source-modal-title').textContent = 'Edit Newsletter Source';
+        document.getElementById('source-save-btn').textContent = 'Save Changes';
+
+        document.getElementById('add-source-modal').classList.add('active');
+      } catch (error) {
+        console.error('Failed to load source:', error);
+        alert('Failed to load source details');
+      }
     }
 
     function closeModal(id) {
@@ -1000,15 +1293,18 @@
     }
 
     async function saveSource() {
+      const sourceId = document.getElementById('source-id').value;
+      const isEdit = !!sourceId;
+
       const data = {
-        name: document.getElementById('source-name').value,
-        senderEmail: document.getElementById('source-email').value,
-        archiveUrl: document.getElementById('source-archive').value || null,
-        website: document.getElementById('source-website').value || null,
-        description: document.getElementById('source-description').value || null,
+        name: document.getElementById('source-name').value.trim(),
+        senderEmail: document.getElementById('source-email').value.trim(),
+        archiveUrl: document.getElementById('source-archive').value.trim() || null,
+        website: document.getElementById('source-website').value.trim() || null,
+        description: document.getElementById('source-description').value.trim() || null,
         category: document.getElementById('source-category').value,
-        isCurated: true,
-        scrapingEnabled: !!document.getElementById('source-archive').value,
+        isCurated: document.getElementById('source-curated').checked,
+        scrapingEnabled: document.getElementById('source-scraping-enabled').checked,
       };
 
       if (!data.name || !data.senderEmail) {
@@ -1017,15 +1313,27 @@
       }
 
       try {
-        await apiCall('/admin/sources', {
-          method: 'POST',
-          body: JSON.stringify(data),
-        });
-        closeModal('add-source-modal');
-        loadSources();
-        alert('Source created successfully!');
+        if (isEdit) {
+          // Update existing source
+          await apiCall(`/admin/sources/${sourceId}`, {
+            method: 'PATCH',
+            body: JSON.stringify(data),
+          });
+          closeModal('add-source-modal');
+          loadSources();
+          alert('Source updated successfully!');
+        } else {
+          // Create new source
+          await apiCall('/admin/sources', {
+            method: 'POST',
+            body: JSON.stringify(data),
+          });
+          closeModal('add-source-modal');
+          loadSources();
+          alert('Source created successfully!');
+        }
       } catch (error) {
-        alert('Failed to create source');
+        alert(isEdit ? 'Failed to update source' : 'Failed to create source');
       }
     }
 

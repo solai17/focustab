@@ -19,6 +19,7 @@ interface ByteCardProps {
   onNext: () => void;
   onView: (byteId: string, dwellTimeMs: number, isRead: boolean) => void;
   queueSize: number;
+  isLoadingNext?: boolean;
 }
 
 export function ByteCard({
@@ -29,6 +30,7 @@ export function ByteCard({
   onNext,
   onView,
   queueSize,
+  isLoadingNext = false,
 }: ByteCardProps) {
   const [localVote, setLocalVote] = useState<VoteValue>(0);
   const [localSaved, setLocalSaved] = useState(false);
@@ -259,10 +261,15 @@ export function ByteCard({
 
             <button
               onClick={onNext}
-              className="flex items-center gap-2 px-4 py-2 bg-ash/30 hover:bg-ash/50 text-pearl rounded-lg transition-all ml-2"
+              disabled={isLoadingNext}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ml-2 ${
+                isLoadingNext
+                  ? 'bg-ash/50 text-smoke cursor-wait'
+                  : 'bg-ash/30 hover:bg-ash/50 text-pearl'
+              }`}
             >
-              <RefreshCw className="w-4 h-4" />
-              <span className="font-medium">Next</span>
+              <RefreshCw className={`w-4 h-4 ${isLoadingNext ? 'animate-spin' : ''}`} />
+              <span className="font-medium">{isLoadingNext ? 'Loading...' : 'Next'}</span>
             </button>
           </div>
         </div>

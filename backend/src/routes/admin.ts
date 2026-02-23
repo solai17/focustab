@@ -19,6 +19,7 @@ const router = Router();
 // Admin email whitelist - in production, move to environment variable
 const ADMIN_EMAILS = [
   'solaiyappan17@gmail.com',
+  's.solaiyappan17@gmail.com',
   // Add more admin emails as needed
 ];
 
@@ -281,6 +282,37 @@ router.post('/sources', async (req: AuthenticatedRequest, res: Response) => {
 });
 
 /**
+ * GET /admin/sources/:id
+ * Get a single newsletter source by ID
+ */
+router.get('/sources/:id', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const source = await prisma.newsletterSource.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: {
+            editions: true,
+            subscriptions: true,
+          },
+        },
+      },
+    });
+
+    if (!source) {
+      return res.status(404).json({ error: 'Source not found' });
+    }
+
+    res.json({ source });
+  } catch (error) {
+    console.error('[Admin] Get source error:', error);
+    res.status(500).json({ error: 'Failed to get source' });
+  }
+});
+
+/**
  * PATCH /admin/sources/:id
  * Update a newsletter source
  */
@@ -356,41 +388,47 @@ router.delete('/sources/:id', async (req: AuthenticatedRequest, res: Response) =
 
 /**
  * GET /admin/insights
- * List insights with filters for moderation
+ * List insights with filters
  */
 router.get('/insights', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const {
-      status = 'pending',
       sourceId,
-      minDownvotes,
+      hidden,
+      audited,
       page = '1',
-      limit = '50',
+      limit = '100',
     } = req.query;
 
     const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
 
     const where: any = {};
 
-    if (status && status !== 'all') {
-      where.moderationStatus = status;
+    // Filter by visibility
+    if (hidden === 'true') {
+      where.isHidden = true;
+    } else if (hidden === 'false') {
+      where.isHidden = false;
+    }
+
+    // Filter by audit status
+    if (audited === 'true') {
+      where.isAudited = true;
+    } else if (audited === 'false') {
+      where.isAudited = false;
     }
 
     if (sourceId) {
       where.edition = { sourceId: sourceId as string };
     }
 
-    if (minDownvotes) {
-      where.downvotes = { gte: parseInt(minDownvotes as string) };
-    }
-
-    const [insights, total] = await Promise.all([
+    const [insights, total, unauditedCount] = await Promise.all([
       prisma.contentByte.findMany({
         where,
         skip,
         take: parseInt(limit as string),
         orderBy: [
-          { downvotes: 'desc' },
+          { qualityScore: 'desc' },
           { createdAt: 'desc' },
         ],
         include: {
@@ -404,22 +442,23 @@ router.get('/insights', async (req: AuthenticatedRequest, res: Response) => {
         },
       }),
       prisma.contentByte.count({ where }),
+      prisma.contentByte.count({ where: { isAudited: false } }),
     ]);
 
     res.json({
-      insights: insights.map((i) => ({
+      insights: insights.map((i: any) => ({
         id: i.id,
         content: i.content,
         type: i.type,
         author: i.author,
         category: i.category,
         qualityScore: i.qualityScore,
-        moderationStatus: i.moderationStatus,
-        rejectionReason: i.rejectionReason,
+        isAudited: i.isAudited,
+        isHidden: i.isHidden || false,
         engagement: {
           upvotes: i.upvotes,
           downvotes: i.downvotes,
-          views: i.viewCount,
+          viewCount: i.viewCount,
           saves: i.saveCount,
         },
         source: i.edition.source,
@@ -431,10 +470,53 @@ router.get('/insights', async (req: AuthenticatedRequest, res: Response) => {
         total,
         totalPages: Math.ceil(total / parseInt(limit as string)),
       },
+      unauditedCount,
     });
   } catch (error) {
     console.error('[Admin] Insights list error:', error);
     res.status(500).json({ error: 'Failed to fetch insights' });
+  }
+});
+
+/**
+ * POST /admin/insights/:id/visibility
+ * Show or hide an insight from users
+ */
+router.post('/insights/:id/visibility', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { hidden } = req.body;
+
+    await prisma.contentByte.update({
+      where: { id },
+      data: { isHidden: hidden === true },
+    });
+
+    res.json({ success: true, hidden: hidden === true });
+  } catch (error) {
+    console.error('[Admin] Update visibility error:', error);
+    res.status(500).json({ error: 'Failed to update visibility' });
+  }
+});
+
+/**
+ * POST /admin/insights/trigger-audit
+ * Inform admin to run the audit script
+ */
+router.post('/insights/trigger-audit', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const unauditedCount = await prisma.contentByte.count({
+      where: { isAudited: false },
+    });
+
+    res.json({
+      success: true,
+      unauditedCount,
+      message: `Found ${unauditedCount} unaudited insights. Run 'npm run audit' in the backend folder to process them.`,
+    });
+  } catch (error) {
+    console.error('[Admin] Trigger audit error:', error);
+    res.status(500).json({ error: 'Failed to check unaudited count' });
   }
 });
 
@@ -720,6 +802,112 @@ router.post('/scrape/trigger', async (req: AuthenticatedRequest, res: Response) 
   } catch (error) {
     console.error('[Admin] Trigger scrape error:', error);
     res.status(500).json({ error: 'Failed to trigger scrape' });
+  }
+});
+
+// =============================================================================
+// NEWSLETTER RECOMMENDATIONS
+// =============================================================================
+
+/**
+ * GET /admin/recommendations
+ * List newsletter recommendations from users
+ */
+router.get('/recommendations', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { status = 'pending' } = req.query;
+
+    const where: any = {};
+    if (status && status !== 'all') {
+      where.status = status;
+    }
+
+    const recommendations = await prisma.newsletterRecommendation.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+
+    res.json({ recommendations });
+  } catch (error) {
+    console.error('[Admin] Get recommendations error:', error);
+    res.status(500).json({ error: 'Failed to fetch recommendations' });
+  }
+});
+
+/**
+ * POST /admin/recommendations/:id/approve
+ * Approve a recommendation and create a source
+ */
+router.post('/recommendations/:id/approve', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { category = 'general' } = req.body;
+    const adminId = req.userId!;
+
+    const recommendation = await prisma.newsletterRecommendation.findUnique({
+      where: { id },
+    });
+
+    if (!recommendation) {
+      return res.status(404).json({ error: 'Recommendation not found' });
+    }
+
+    // Create a new source from the recommendation
+    const source = await prisma.newsletterSource.create({
+      data: {
+        name: recommendation.name,
+        website: recommendation.url,
+        senderEmail: `pending@${new URL(recommendation.url).hostname}`,
+        senderDomain: new URL(recommendation.url).hostname,
+        category,
+        isCurated: false, // Start as draft, admin can curate later
+        description: `Recommended by user`,
+      },
+    });
+
+    // Update the recommendation
+    await prisma.newsletterRecommendation.update({
+      where: { id },
+      data: {
+        status: 'approved',
+        reviewedBy: adminId,
+        reviewedAt: new Date(),
+        createdSourceId: source.id,
+      },
+    });
+
+    res.json({ success: true, source });
+  } catch (error) {
+    console.error('[Admin] Approve recommendation error:', error);
+    res.status(500).json({ error: 'Failed to approve recommendation' });
+  }
+});
+
+/**
+ * POST /admin/recommendations/:id/reject
+ * Reject a recommendation
+ */
+router.post('/recommendations/:id/reject', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const adminId = req.userId!;
+
+    await prisma.newsletterRecommendation.update({
+      where: { id },
+      data: {
+        status: 'rejected',
+        reviewedBy: adminId,
+        reviewedAt: new Date(),
+        reviewNotes: reason,
+      },
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Admin] Reject recommendation error:', error);
+    res.status(500).json({ error: 'Failed to reject recommendation' });
   }
 });
 

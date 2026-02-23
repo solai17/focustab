@@ -795,4 +795,60 @@ function formatByteResponse(byte: any, userId: string): ContentByteResponse {
   };
 }
 
+// =============================================================================
+// NEWSLETTER RECOMMENDATIONS
+// =============================================================================
+
+/**
+ * POST /feed/recommend-newsletter
+ * Submit a newsletter recommendation
+ */
+router.post('/recommend-newsletter', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const { name, url } = req.body;
+
+    // Validate input
+    if (!name || !url) {
+      return res.status(400).json({ error: 'Newsletter name and URL are required' });
+    }
+
+    // Validate URL format
+    try {
+      new URL(url);
+    } catch {
+      return res.status(400).json({ error: 'Please provide a valid URL' });
+    }
+
+    // Get user email
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true },
+    });
+
+    // Create recommendation
+    const recommendation = await prisma.newsletterRecommendation.create({
+      data: {
+        name: name.trim(),
+        url: url.trim(),
+        userId,
+        userEmail: user?.email,
+      },
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Thank you for your recommendation! Our team will review it soon.',
+      recommendation: {
+        id: recommendation.id,
+        name: recommendation.name,
+        url: recommendation.url,
+      },
+    });
+  } catch (error) {
+    console.error('Recommend newsletter error:', error);
+    res.status(500).json({ error: 'Failed to submit recommendation' });
+  }
+});
+
 export default router;
