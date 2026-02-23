@@ -45,9 +45,12 @@ function userToProfile(user: AuthUser): UserProfile {
 }
 
 
+// Prefetch queue size - how many bytes to keep ready
+const PREFETCH_QUEUE_SIZE = 3;
+
 function App() {
   const [isLoading, setIsLoading] = useState(true);
-  const [isFetchingNext, setIsFetchingNext] = useState(false); // Instant loading state for Next button
+  const [isLoadingNext, setIsLoadingNext] = useState(false); // Only true when queue empty & fetching
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [currentByte, setCurrentByte] = useState<ContentByte | null>(null);
   const [savedBytes, setSavedBytes] = useState<ContentByte[]>([]);
@@ -66,6 +69,9 @@ function App() {
   const [, setHasUserSubscriptions] = useState(false);
   // Track if using mock data (offline fallback)
   const usingMockData = useRef(false);
+  // Prefetch queue for instant Next button
+  const byteQueueRef = useRef<ContentByte[]>([]);
+  const isFetchingRef = useRef(false);
 
   // Format category for display (capitalize first letter)
   const formatCategory = (category: string) => {
@@ -201,6 +207,7 @@ function App() {
           setSavedBytes(result.saved);
           setHasUserSubscriptions(result.hasUserSubscriptions);
           setIsCommunityContent(result.isCommunityContent);
+          // Prefetch will be triggered by useEffect below
           return;
         }
 
@@ -227,6 +234,7 @@ function App() {
               setSavedBytes(result.saved);
               setHasUserSubscriptions(result.hasUserSubscriptions);
               setIsCommunityContent(result.isCommunityContent);
+              // Prefetch will be triggered by useEffect below
               return;
             }
             // New user or incomplete onboarding - show onboarding
@@ -374,11 +382,47 @@ function App() {
     }
   }, []);
 
-  // Handle next byte - instant UI response with background fetch
-  const handleNext = useCallback(async () => {
-    // Set loading state IMMEDIATELY for instant feedback
-    setIsFetchingNext(true);
+  // Prefetch bytes in background to fill the queue
+  const prefetchBytes = useCallback(async () => {
+    // Don't fetch if already fetching or using mock data
+    if (isFetchingRef.current || usingMockData.current) return;
+    // Don't fetch if queue is full enough
+    if (byteQueueRef.current.length >= PREFETCH_QUEUE_SIZE) return;
 
+    isFetchingRef.current = true;
+
+    try {
+      const result = await fetchNextByte();
+      if (result.byte) {
+        // Add to queue if not already there (avoid duplicates)
+        const isDuplicate = byteQueueRef.current.some(b => b.id === result.byte!.id);
+        if (!isDuplicate) {
+          byteQueueRef.current.push(result.byte);
+        }
+        setQueueSize(result.queueSize + byteQueueRef.current.length);
+        setHasUserSubscriptions(result.hasUserSubscriptions);
+
+        // Keep fetching until queue is full
+        if (byteQueueRef.current.length < PREFETCH_QUEUE_SIZE) {
+          isFetchingRef.current = false;
+          prefetchBytes();
+          return;
+        }
+      } else {
+        // No more bytes from API
+        if (byteQueueRef.current.length === 0) {
+          usingMockData.current = true;
+        }
+      }
+    } catch (error) {
+      console.error('Prefetch error:', error);
+    } finally {
+      isFetchingRef.current = false;
+    }
+  }, []);
+
+  // Handle next byte - INSTANT from prefetch queue
+  const handleNext = useCallback(() => {
     // If showing community bytes, cycle through them
     if (showingCommunityBytes && communityBytes.length > 0) {
       const nextIndex = (communityByteIndex + 1) % communityBytes.length;
@@ -386,47 +430,69 @@ function App() {
       setCurrentByte(communityBytes[nextIndex]);
       setQueueSize(communityBytes.length - nextIndex - 1);
       setIsCommunityContent(true);
-      setIsFetchingNext(false);
       return;
     }
 
+    // Try to get next byte from prefetch queue (INSTANT)
+    if (byteQueueRef.current.length > 0) {
+      const nextByte = byteQueueRef.current.shift()!;
+      setCurrentByte(nextByte);
+      setQueueSize(prev => Math.max(0, prev - 1));
+      setIsCommunityContent(false);
+
+      // Trigger background prefetch to refill queue
+      prefetchBytes();
+      return;
+    }
+
+    // Queue empty - use mock data as fallback (still instant)
     if (usingMockData.current) {
-      // Offline/demo mode - use mock data (instant)
       const byte = getNextMockByte();
       setCurrentByte(byte);
       setQueueSize(prev => Math.max(0, prev - 1));
       setIsCommunityContent(true);
-      setIsFetchingNext(false);
-    } else {
-      // Fetch from API in background
-      try {
-        const result = await fetchNextByte();
-        if (result.byte) {
-          setCurrentByte(result.byte);
-          setQueueSize(result.queueSize);
-          setIsCommunityContent(result.isCommunityContent);
-          setHasUserSubscriptions(result.hasUserSubscriptions);
-        } else {
-          // No more bytes from API, fall back to mock
-          usingMockData.current = true;
-          const mockByte = getNextMockByte();
-          setCurrentByte(mockByte);
-          setQueueSize(SAMPLE_BYTES.length);
-          setIsCommunityContent(true);
-        }
-      } catch (error) {
-        console.error('Failed to fetch next byte:', error);
-        // Fall back to mock on error
+      return;
+    }
+
+    // Queue empty but not using mock - fetch directly (only case with delay)
+    // This should rarely happen if prefetch is working
+    setIsLoadingNext(true);
+    fetchNextByte().then(result => {
+      if (result.byte) {
+        setCurrentByte(result.byte);
+        setQueueSize(result.queueSize);
+        setIsCommunityContent(result.isCommunityContent);
+        setHasUserSubscriptions(result.hasUserSubscriptions);
+      } else {
         usingMockData.current = true;
-        const byte = getNextMockByte();
-        setCurrentByte(byte);
+        const mockByte = getNextMockByte();
+        setCurrentByte(mockByte);
         setQueueSize(SAMPLE_BYTES.length);
         setIsCommunityContent(true);
-      } finally {
-        setIsFetchingNext(false);
       }
+      // Start prefetching for next time
+      prefetchBytes();
+    }).catch(() => {
+      usingMockData.current = true;
+      const byte = getNextMockByte();
+      setCurrentByte(byte);
+      setQueueSize(SAMPLE_BYTES.length);
+      setIsCommunityContent(true);
+    }).finally(() => {
+      setIsLoadingNext(false);
+    });
+  }, [showingCommunityBytes, communityBytes, communityByteIndex, prefetchBytes]);
+
+  // Start prefetching when initial byte is loaded (runs once after first byte shows)
+  useEffect(() => {
+    if (!isLoading && currentByte && !usingMockData.current && byteQueueRef.current.length === 0) {
+      // Small delay to let initial render complete, then start filling the queue
+      const timer = setTimeout(() => {
+        prefetchBytes();
+      }, 300);
+      return () => clearTimeout(timer);
     }
-  }, [showingCommunityBytes, communityBytes, communityByteIndex]);
+  }, [isLoading, currentByte, prefetchBytes]);
 
   // Update profile
   const handleUpdateProfile = async (updatedProfile: UserProfile) => {
@@ -587,7 +653,7 @@ function App() {
               onNext={handleNext}
               onView={handleView}
               queueSize={queueSize}
-              isLoadingNext={isFetchingNext}
+              isLoadingNext={isLoadingNext}
             />
           ) : (
             <div className="text-center py-16 bg-obsidian/80 backdrop-blur-sm rounded-2xl p-8 border border-ash/30">
