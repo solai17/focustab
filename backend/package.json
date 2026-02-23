@@ -17,7 +17,8 @@
     "scrape": "ts-node scripts/scrape-newsletters.ts",
     "scrape:test": "ts-node scripts/test-scrape.ts",
     "audit": "ts-node scripts/audit-content-bytes.ts",
-    "audit:dry": "DRY_RUN=true ts-node scripts/audit-content-bytes.ts"
+    "audit:dry": "DRY_RUN=true ts-node scripts/audit-content-bytes.ts",
+    "seed:admin": "ts-node scripts/seed-admin.ts"
   },
   "keywords": [
     "byteletters",

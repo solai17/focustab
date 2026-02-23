@@ -29,6 +29,7 @@ app.use(requestLogger);     // Log all requests
 // CORS configuration
 const allowedOrigins = [
   process.env.FRONTEND_URL,
+  'https://byteletters.app',  // Admin portal on Cloudflare Pages
   'chrome-extension://*',
   'http://localhost:5173', // Vite dev server
   'http://localhost:3000',

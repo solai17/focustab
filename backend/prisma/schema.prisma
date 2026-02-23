@@ -248,9 +248,10 @@ model ContentByte {
   trendingScore   Float     @default(0) // Time-decayed engagement
   qualityScore    Float     @default(0) // AI-assessed quality (0-1)
   isAudited       Boolean   @default(false) // Whether this byte has been quality audited
+  isHidden        Boolean   @default(false) // Admin can hide low-quality content from users
 
-  // Moderation
-  moderationStatus String   @default("pending") // pending, approved, rejected, flagged
+  // Moderation (legacy - kept for compatibility)
+  moderationStatus String   @default("approved") // pending, approved, rejected, flagged
   moderatedBy     String?   // Admin user ID who moderated
   moderatedAt     DateTime? // When moderation happened
   rejectionReason String?   // Why it was rejected (for audit)
@@ -276,6 +277,7 @@ model ContentByte {
   @@index([moderationStatus])
   @@index([qualityScore])
   @@index([isAudited])
+  @@index([isHidden])
   @@map("content_bytes")
 }
 
@@ -343,5 +345,33 @@ model ScrapeJob {
   @@index([status])
   @@index([startedAt])
   @@map("scrape_jobs")
+}
+
+// Newsletter recommendation from users
+model NewsletterRecommendation {
+  id              String    @id @default(uuid())
+
+  // Newsletter info
+  name            String    // Newsletter name provided by user
+  url             String    // Newsletter URL/website
+
+  // Who recommended
+  userId          String?   // User who recommended (null if submitted without login)
+  userEmail       String?   // Email of recommender (optional)
+
+  // Status
+  status          String    @default("pending") // pending, approved, rejected
+  reviewedBy      String?   // Admin who reviewed
+  reviewedAt      DateTime?
+  reviewNotes     String?   // Admin notes
+
+  // If approved, links to created source
+  createdSourceId String?
+
+  createdAt       DateTime  @default(now())
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("newsletter_recommendations")
 }
 

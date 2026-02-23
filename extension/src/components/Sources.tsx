@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Check, Loader2, Library, ExternalLink } from 'lucide-react';
+import { X, Check, Loader2, Library, ExternalLink, Send, MessageSquarePlus } from 'lucide-react';
 
 interface Newsletter {
   id: string;
@@ -29,6 +29,11 @@ export function Sources({ onClose }: SourcesProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [subscribing, setSubscribing] = useState<Set<string>>(new Set());
+  const [showRecommendForm, setShowRecommendForm] = useState(false);
+  const [recName, setRecName] = useState('');
+  const [recUrl, setRecUrl] = useState('');
+  const [recSubmitting, setRecSubmitting] = useState(false);
+  const [recResult, setRecResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
     loadNewsletters();
@@ -92,6 +97,47 @@ export function Sources({ onClose }: SourcesProps) {
         next.delete(newsletter.id);
         return next;
       });
+    }
+  };
+
+  const submitRecommendation = async () => {
+    if (!recName.trim() || !recUrl.trim()) return;
+
+    setRecSubmitting(true);
+    setRecResult(null);
+
+    try {
+      const { getStoredAuth } = await import('../services/auth');
+      const auth = await getStoredAuth();
+      if (!auth?.token) {
+        setRecResult({ type: 'error', message: 'Please sign in to submit a recommendation.' });
+        return;
+      }
+
+      const API_URL = import.meta.env.VITE_API_URL || 'https://api.byteletters.app';
+      const response = await fetch(`${API_URL}/feed/recommend-newsletter`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${auth.token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: recName.trim(), url: recUrl.trim() }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setRecResult({ type: 'success', message: 'Thanks! We\'ll review your recommendation soon.' });
+        setRecName('');
+        setRecUrl('');
+        setTimeout(() => setShowRecommendForm(false), 3000);
+      } else {
+        setRecResult({ type: 'error', message: data.error || 'Failed to submit recommendation.' });
+      }
+    } catch {
+      setRecResult({ type: 'error', message: 'Failed to connect. Please try again.' });
+    } finally {
+      setRecSubmitting(false);
     }
   };
 
@@ -263,12 +309,60 @@ export function Sources({ onClose }: SourcesProps) {
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer - Recommend Newsletter */}
         <div className="p-4 border-t border-ash bg-slate/30">
-          <p className="text-xs text-smoke text-center">
-            You'll only see insights from newsletters you're subscribed to.
-            Toggle off sources you're not interested in.
-          </p>
+          {!showRecommendForm ? (
+            <button
+              onClick={() => { setShowRecommendForm(true); setRecResult(null); }}
+              className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-lg bg-ash/50 hover:bg-ash text-smoke hover:text-pearl transition-colors text-sm"
+            >
+              <MessageSquarePlus className="w-4 h-4" />
+              <span>Know a great newsletter? Recommend it to us!</span>
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-pearl font-medium">Suggest a newsletter for ByteLetters</p>
+              <input
+                type="text"
+                value={recName}
+                onChange={(e) => setRecName(e.target.value)}
+                placeholder="Newsletter name"
+                className="w-full px-3 py-2 bg-obsidian border border-ash rounded-lg text-pearl text-sm placeholder-smoke/50 focus:border-life focus:outline-none"
+              />
+              <input
+                type="url"
+                value={recUrl}
+                onChange={(e) => setRecUrl(e.target.value)}
+                placeholder="Newsletter URL (e.g., https://...)"
+                className="w-full px-3 py-2 bg-obsidian border border-ash rounded-lg text-pearl text-sm placeholder-smoke/50 focus:border-life focus:outline-none"
+              />
+              {recResult && (
+                <p className={`text-xs ${recResult.type === 'success' ? 'text-life' : 'text-rose'}`}>
+                  {recResult.message}
+                </p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setShowRecommendForm(false); setRecResult(null); }}
+                  className="flex-1 py-2 px-3 rounded-lg bg-ash/50 text-smoke hover:text-pearl text-sm transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submitRecommendation}
+                  disabled={recSubmitting || !recName.trim() || !recUrl.trim()}
+                  className="flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-lg bg-life text-void text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {recSubmitting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                  <span>{recSubmitting ? 'Sending...' : 'Submit'}</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -276,6 +276,82 @@ router.post('/login', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /auth/admin-login
+ * Secure admin login with email and password
+ * Only allows users with isAdmin flag set to true
+ */
+router.post('/admin-login', async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body;
+
+    // Validate input - prevent empty strings and SQL injection
+    if (!email || !password || typeof email !== 'string' || typeof password !== 'string') {
+      res.status(400).json({ error: 'Email and password are required' });
+      return;
+    }
+
+    // Sanitize email (lowercase, trim)
+    const sanitizedEmail = email.toLowerCase().trim();
+
+    // Find user by email using parameterized query (Prisma handles this safely)
+    const user = await prisma.user.findUnique({
+      where: { email: sanitizedEmail },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        passwordHash: true,
+        isAdmin: true,
+      },
+    });
+
+    // Use constant-time comparison path to prevent timing attacks
+    // Same error message regardless of whether user exists or password is wrong
+    if (!user) {
+      // Simulate bcrypt comparison to prevent timing attacks
+      await bcrypt.compare(password, '$2a$12$fakehashtopreventtimingattacks');
+      res.status(401).json({ error: 'Invalid credentials' });
+      return;
+    }
+
+    // Check if user has a password set
+    if (!user.passwordHash) {
+      res.status(401).json({ error: 'Invalid credentials' });
+      return;
+    }
+
+    // Verify password with timing-safe bcrypt comparison
+    const isValidPassword = await bcrypt.compare(password, user.passwordHash);
+    if (!isValidPassword) {
+      res.status(401).json({ error: 'Invalid credentials' });
+      return;
+    }
+
+    // Check if user is admin
+    if (!user.isAdmin) {
+      res.status(403).json({ error: 'Admin access required' });
+      return;
+    }
+
+    // Generate JWT token
+    const token = generateToken({ userId: user.id, email: user.email });
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        isAdmin: user.isAdmin,
+      },
+    });
+  } catch (error) {
+    console.error('Admin login error:', error);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+/**
  * GET /auth/me
  * Get current user profile
  */
