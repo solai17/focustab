@@ -27,6 +27,23 @@ declare const chrome: {
 // API Configuration
 // Production URL as fallback - override with VITE_API_URL for local development
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://api.byteletters.app';
+const API_TIMEOUT_MS = 10000; // 10 second timeout for API calls
+
+// Helper to fetch with timeout
+async function fetchWithTimeout(url: string, options: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 // Storage keys
 const AUTH_KEYS = {
@@ -99,7 +116,7 @@ export async function authenticateWithGoogle(
   googleId: string,
   profileData?: { name?: string; birthDate?: string; lifeExpectancy?: number; enableRecommendations?: boolean }
 ): Promise<{ user: AuthUser; token: string; isNewUser: boolean }> {
-  const response = await fetch(`${API_BASE_URL}/auth/google`, {
+  const response = await fetchWithTimeout(`${API_BASE_URL}/auth/google`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -158,7 +175,7 @@ export async function clearAuth(): Promise<void> {
  */
 export async function verifyToken(token: string): Promise<AuthUser | null> {
   try {
-    const response = await fetch(`${API_BASE_URL}/auth/me`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/auth/me`, {
       headers: {
         'Authorization': `Bearer ${token}`,
       },
@@ -183,7 +200,7 @@ export async function updateProfile(
   token: string,
   updates: { name?: string; birthDate?: string; lifeExpectancy?: number; enableRecommendations?: boolean }
 ): Promise<AuthUser> {
-  const response = await fetch(`${API_BASE_URL}/auth/profile`, {
+  const response = await fetchWithTimeout(`${API_BASE_URL}/auth/profile`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -219,7 +236,7 @@ export async function apiRequest<T>(
     (headers as Record<string, string>)['Authorization'] = `Bearer ${storedAuth.token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const response = await fetchWithTimeout(`${API_BASE_URL}${endpoint}`, {
     ...options,
     headers,
   });
