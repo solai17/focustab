@@ -11,7 +11,10 @@ interface SettingsProps {
 
 export function Settings({ profile, onClose, onUpdate, onReset }: SettingsProps) {
   const [name, setName] = useState(profile.name);
-  const [birthDate, setBirthDate] = useState(profile.birthDate);
+  // Convert ISO timestamp to yyyy-MM-dd format for date input
+  const [birthDate, setBirthDate] = useState(
+    profile.birthDate ? profile.birthDate.split('T')[0] : ''
+  );
   const [lifeExpectancy, setLifeExpectancy] = useState(profile.lifeExpectancy);
   const [enableRecommendations, setEnableRecommendations] = useState(
     profile.enableRecommendations ?? true
