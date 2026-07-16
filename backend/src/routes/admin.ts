@@ -606,99 +606,6 @@ router.post('/insights/bulk-moderate', async (req: AuthenticatedRequest, res: Re
 });
 
 // =============================================================================
-// FORWARDED EMAILS REVIEW
-// =============================================================================
-
-/**
- * GET /admin/forwarded
- * List forwarded emails pending review
- */
-router.get('/forwarded', async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { status = 'pending', page = '1', limit = '20' } = req.query;
-    const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
-
-    const where = status === 'all' ? {} : { status: status as string };
-
-    const [emails, total] = await Promise.all([
-      prisma.forwardedEmail.findMany({
-        where,
-        skip,
-        take: parseInt(limit as string),
-        orderBy: { receivedAt: 'desc' },
-      }),
-      prisma.forwardedEmail.count({ where }),
-    ]);
-
-    res.json({
-      emails,
-      pagination: {
-        page: parseInt(page as string),
-        limit: parseInt(limit as string),
-        total,
-        totalPages: Math.ceil(total / parseInt(limit as string)),
-      },
-    });
-  } catch (error) {
-    console.error('[Admin] Forwarded emails error:', error);
-    res.status(500).json({ error: 'Failed to fetch forwarded emails' });
-  }
-});
-
-/**
- * POST /admin/forwarded/:id/review
- * Review a forwarded email
- */
-router.post('/forwarded/:id/review', async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const { id } = req.params;
-    const { action, notes, createSource } = req.body;
-    const adminId = req.userId!;
-
-    if (!['approve', 'reject'].includes(action)) {
-      return res.status(400).json({ error: 'Invalid action' });
-    }
-
-    let createdSourceId: string | null = null;
-
-    // If approving and createSource is provided, create the newsletter source
-    if (action === 'approve' && createSource) {
-      const source = await prisma.newsletterSource.create({
-        data: {
-          name: createSource.name,
-          senderEmail: createSource.senderEmail,
-          senderDomain: createSource.senderEmail.split('@')[1],
-          description: createSource.description,
-          website: createSource.website,
-          archiveUrl: createSource.archiveUrl,
-          category: createSource.category || 'general',
-          isCurated: true,
-          scrapingEnabled: !!createSource.archiveUrl,
-          isVerified: true,
-        },
-      });
-      createdSourceId = source.id;
-    }
-
-    await prisma.forwardedEmail.update({
-      where: { id },
-      data: {
-        status: action === 'approve' ? 'approved' : 'rejected',
-        reviewedBy: adminId,
-        reviewedAt: new Date(),
-        reviewNotes: notes,
-        createdSourceId,
-      },
-    });
-
-    res.json({ success: true, createdSourceId });
-  } catch (error) {
-    console.error('[Admin] Review forwarded error:', error);
-    res.status(500).json({ error: 'Failed to review email' });
-  }
-});
-
-// =============================================================================
 // SCRAPING MANAGEMENT
 // =============================================================================
 
@@ -841,7 +748,6 @@ router.get('/recommendations', async (req: AuthenticatedRequest, res: Response) 
 router.post('/recommendations/:id/approve', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { category = 'general' } = req.body;
     const adminId = req.userId!;
 
     const recommendation = await prisma.newsletterRecommendation.findUnique({
@@ -851,6 +757,10 @@ router.post('/recommendations/:id/approve', async (req: AuthenticatedRequest, re
     if (!recommendation) {
       return res.status(404).json({ error: 'Recommendation not found' });
     }
+
+    // Category: admin override > user's first suggested tag > general
+    const category: string =
+      req.body.category || recommendation.tags?.[0] || 'general';
 
     // Parse and validate the recommended URL (user-submitted data)
     let hostname: string;

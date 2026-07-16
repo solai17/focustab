@@ -56,7 +56,6 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
-  inboxEmail: string;
   birthDate?: string;
   lifeExpectancy?: number;
   enableRecommendations?: boolean;

@@ -1,4 +1,4 @@
-import { X, User, Calendar, Mail, Copy, Check, Trash2, Sparkles } from 'lucide-react';
+import { X, User, Calendar, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import type { UserProfile } from '../types';
 
@@ -16,10 +16,6 @@ export function Settings({ profile, onClose, onUpdate, onReset }: SettingsProps)
     profile.birthDate ? profile.birthDate.split('T')[0] : ''
   );
   const [lifeExpectancy, setLifeExpectancy] = useState(profile.lifeExpectancy);
-  const [enableRecommendations, setEnableRecommendations] = useState(
-    profile.enableRecommendations ?? true
-  );
-  const [copied, setCopied] = useState(false);
   const [showConfirmReset, setShowConfirmReset] = useState(false);
 
   const handleSave = () => {
@@ -28,17 +24,8 @@ export function Settings({ profile, onClose, onUpdate, onReset }: SettingsProps)
       name,
       birthDate,
       lifeExpectancy,
-      enableRecommendations,
     });
     onClose();
-  };
-
-  const copyEmail = async () => {
-    if (profile.inboxEmail) {
-      await navigator.clipboard.writeText(profile.inboxEmail);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
   };
 
   const handleReset = () => {
@@ -110,63 +97,6 @@ export function Settings({ profile, onClose, onUpdate, onReset }: SettingsProps)
               </span>
             </div>
           </div>
-
-          {/* Recommendations Toggle */}
-          <div className="pt-2">
-            <label className="flex items-center gap-2 text-sm text-smoke mb-3">
-              <Sparkles className="w-4 h-4" />
-              Discovery
-            </label>
-            <div className="flex items-start gap-4 p-4 bg-slate border border-ash rounded-lg">
-              <button
-                onClick={() => setEnableRecommendations(!enableRecommendations)}
-                className={`w-11 h-6 rounded-full transition-all flex items-center px-0.5 flex-shrink-0 ${
-                  enableRecommendations ? 'bg-life' : 'bg-ash'
-                }`}
-              >
-                <div
-                  className={`w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${
-                    enableRecommendations ? 'translate-x-5' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-              <div className="flex-1">
-                <h3 className="text-pearl text-sm font-medium mb-1">
-                  Community picks
-                </h3>
-                <p className="text-xs text-smoke leading-relaxed">
-                  {enableRecommendations
-                    ? "See curated content from the community."
-                    : "Only show content from your newsletters."}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Inbox Email */}
-          {profile.inboxEmail && (
-            <div>
-              <label className="flex items-center gap-2 text-sm text-smoke mb-2">
-                <Mail className="w-4 h-4" />
-                Newsletter Inbox
-              </label>
-              <div className="flex items-center gap-2 p-3 bg-slate border border-ash rounded-lg">
-                <code className="text-life text-sm flex-1 break-all">
-                  {profile.inboxEmail}
-                </code>
-                <button
-                  onClick={copyEmail}
-                  className="p-1.5 rounded hover:bg-ash transition-colors"
-                >
-                  {copied ? (
-                    <Check className="w-4 h-4 text-life" />
-                  ) : (
-                    <Copy className="w-4 h-4 text-smoke" />
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Reset */}
           <div className="pt-4 border-t border-ash">

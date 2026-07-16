@@ -39,7 +39,6 @@ function userToProfile(user: AuthUser): UserProfile {
     name: user.name,
     birthDate: user.birthDate || new Date().toISOString().split('T')[0],
     lifeExpectancy: user.lifeExpectancy || 80,
-    inboxEmail: user.inboxEmail,
     enableRecommendations: user.enableRecommendations ?? true,
     createdAt: new Date().toISOString(),
   };
@@ -578,6 +577,41 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showingCommunityBytes, communityBytes, communityByteIndex, prefetchBytes]);
 
+  // Sources modal closed - if the user toggled any subscription, the feed
+  // basis changed: rebuild the byte queue so new tabs reflect it immediately
+  const handleSourcesClosed = useCallback((subscriptionsChanged: boolean) => {
+    setShowSources(false);
+    if (!subscriptionsChanged || usingMockData.current) return;
+
+    byteQueueRef.current = [];
+    persistQueue();
+    setIsLoadingNext(true);
+
+    fetchNextByte(recentIdsRef.current)
+      .then((result) => {
+        if (result.byte) {
+          rememberShown(result.byte.id);
+          setCurrentByte(result.byte);
+          setQueueSize(result.queueSize);
+          setHasUserSubscriptions(result.hasUserSubscriptions);
+          void prefetchBytes();
+        } else {
+          // No subscribed sources left (or nothing unseen) - empty state
+          // guides the user back to Sources
+          setCurrentByte(null);
+          setQueueSize(0);
+          setHasUserSubscriptions(result.hasUserSubscriptions);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to refresh feed after subscription change:', error);
+      })
+      .finally(() => {
+        setIsLoadingNext(false);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefetchBytes]);
+
   // Update profile
   const handleUpdateProfile = async (updatedProfile: UserProfile) => {
     // Save locally first
@@ -780,7 +814,7 @@ function App() {
 
       {/* Sources Modal */}
       {showSources && (
-        <Sources onClose={() => setShowSources(false)} />
+        <Sources onClose={handleSourcesClosed} />
       )}
 
       {/* Saved Bytes Slide Panel */}

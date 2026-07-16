@@ -6,7 +6,6 @@ export interface UserProfile {
   name: string;
   birthDate: string; // ISO date string
   lifeExpectancy: number;
-  inboxEmail?: string;
   enableRecommendations: boolean;
   createdAt: string;
 }
@@ -94,38 +93,6 @@ export interface AppSettings {
   theme: 'dark' | 'light';
   enableRecommendations: boolean;
   feedType: 'personalized' | 'popular' | 'trending' | 'subscribed';
-}
-
-// =============================================================================
-// LEGACY TYPES (for backward compatibility)
-// =============================================================================
-
-export interface Inspiration {
-  id: string;
-  quote: string;
-  author: string;
-  source: string;
-  category: 'wisdom' | 'motivation' | 'reflection';
-}
-
-export interface Newsletter {
-  id: string;
-  title: string;
-  source: string;
-  summary: string;
-  keyInsight: string;
-  readTimeMinutes: number;
-  receivedAt: string;
-  isRead: boolean;
-  originalUrl?: string;
-  fullContent?: string;
-}
-
-export interface DailyContent {
-  inspiration: Inspiration;
-  newsletters: Newsletter[];
-  sundaysRemaining: number;
-  percentLived: number;
 }
 
 // =============================================================================
