@@ -621,13 +621,14 @@
                 <th>Category</th>
                 <th>Editions</th>
                 <th>Insights</th>
-                <th>Subscribers</th>
+                <th>Content up to</th>
+                <th>Last scraped</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="sources-table">
-              <tr><td colspan="7" class="loading"><div class="spinner"></div></td></tr>
+              <tr><td colspan="8" class="loading"><div class="spinner"></div></td></tr>
             </tbody>
           </table>
         </div>
@@ -693,7 +694,11 @@
       <div id="tab-scraping" class="tab-content">
         <div class="table-container">
           <div class="table-header">
-            <h2>Recent Scrape Jobs</h2>
+            <h2>Scrape Jobs</h2>
+            <div class="table-actions">
+              <span id="scrape-live-indicator" style="color: var(--amber); font-size: 0.85rem; display: none;">● running — auto-refreshing</span>
+              <button class="btn btn-secondary" onclick="loadScraping()">Refresh</button>
+            </div>
           </div>
           <table>
             <thead>
@@ -701,10 +706,10 @@
                 <th>Source</th>
                 <th>Started</th>
                 <th>Status</th>
-                <th>Editions Found</th>
+                <th>Found</th>
                 <th>New</th>
-                <th>Insights</th>
-                <th>Error</th>
+                <th>Already stored</th>
+                <th>Logs</th>
               </tr>
             </thead>
             <tbody id="scraping-table">
@@ -770,6 +775,15 @@
           <label>
             <input type="checkbox" id="source-scraping-enabled"> Enable auto-scraping
           </label>
+        </div>
+        <div class="form-group">
+          <label>Auto-scrape schedule</label>
+          <select id="source-frequency">
+            <option value="manual">Manual only (no schedule)</option>
+            <option value="weekly">Weekly</option>
+            <option value="daily">Daily</option>
+          </select>
+          <small style="color: var(--smoke);">Scheduled runs are incremental - they only fetch editions we don't have yet</small>
         </div>
       </div>
       <div class="modal-footer">
@@ -986,14 +1000,19 @@
             <td><span class="badge badge-info">${escapeHtml(source.category)}</span></td>
             <td>${source.stats.editions}</td>
             <td>${source.stats.insights}</td>
-            <td>${source.stats.subscribers}</td>
+            <td>${fmtDate(source.latestEditionAt)}</td>
+            <td>
+              ${fmtDate(source.lastScrapedAt)}
+              ${source.lastScrapeStatus === 'failed' ? '<span class="badge badge-danger" title="' + escapeHtml(source.lastScrapeError || '') + '">failed</span>' : ''}
+            </td>
             <td>
               ${source.isCurated ? '<span class="badge badge-success">Curated</span>' : '<span class="badge badge-warning">Draft</span>'}
-              ${source.scrapingEnabled ? '<span class="badge badge-info">Scraping</span>' : ''}
+              ${source.scrapingEnabled ? `<span class="badge badge-info">auto: ${escapeHtml(source.scrapeFrequency || 'manual')}</span>` : ''}
+              ${source.isScrapingNow ? '<span class="badge badge-warning">scraping…</span>' : ''}
             </td>
             <td>
               <button class="btn btn-secondary" onclick="editSource('${source.id}')">Edit</button>
-              ${source.archiveUrl ? `<button class="btn btn-primary" onclick="triggerScrape('${source.id}')">Scrape</button>` : ''}
+              ${source.archiveUrl ? `<button class="btn btn-primary" onclick="triggerScrape('${source.id}')" ${source.isScrapingNow ? 'disabled' : ''}>Scrape now</button>` : ''}
             </td>
           </tr>
         `).join('');
@@ -1054,7 +1073,7 @@
           method: 'POST',
           body: JSON.stringify(category.trim() ? { category: category.trim() } : {}),
         });
-        alert('Recommendation approved and added as a new source!');
+        alert('Added as a DRAFT source with scraping OFF.\n\nNext steps when you\'re ready:\n1. Click Edit on the source\n2. Add its Archive URL\n3. Review content quality, then tick "Curated" + "Enable auto-scraping"');
         loadSources();
         loadRecommendations();
       } catch (error) {
@@ -1155,6 +1174,13 @@
       return div.innerHTML;
     }
 
+    function fmtDate(value) {
+      if (!value) return '<span style="color: var(--smoke);">never</span>';
+      const d = new Date(value);
+      if (isNaN(d.getTime())) return '<span style="color: var(--smoke);">-</span>';
+      return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
     async function toggleInsightVisibility(insightId, hide) {
       try {
         await apiCall(`/admin/insights/${insightId}/visibility`, {
@@ -1185,13 +1211,16 @@
       }
     }
 
+    let scrapePollTimer = null;
+
     async function loadScraping() {
       try {
         const data = await apiCall('/admin/scrape/jobs');
         const tbody = document.getElementById('scraping-table');
 
         if (data.jobs.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><h3>No scrape jobs</h3><p>Trigger a scrape from the Sources tab</p></td></tr>';
+          tbody.innerHTML = '<tr><td colspan="7" class="empty-state"><h3>No scrape jobs yet</h3><p>Click "Scrape now" on a source, or set a daily/weekly schedule in its Edit form</p></td></tr>';
+          stopScrapePolling();
           return;
         }
 
@@ -1199,15 +1228,68 @@
           <tr>
             <td><strong>${escapeHtml(job.sourceName)}</strong></td>
             <td>${new Date(job.startedAt).toLocaleString()}</td>
-            <td><span class="badge ${getStatusBadge(job.status)}">${escapeHtml(job.status)}</span></td>
+            <td>
+              <span class="badge ${getStatusBadge(job.status)}">${escapeHtml(job.status)}</span>
+              ${job.errorMessage ? `<br><small style="color: var(--rose);">${escapeHtml(job.errorMessage)}</small>` : ''}
+            </td>
             <td>${job.editionsFound}</td>
             <td>${job.editionsNew}</td>
-            <td>${job.insightsCreated}</td>
-            <td>${job.errorMessage ? `<span style="color: var(--rose);">${escapeHtml(job.errorMessage)}</span>` : '-'}</td>
+            <td>${job.editionsSkipped}</td>
+            <td>
+              ${job.logCount > 0 ? `<button class="btn btn-secondary" onclick="toggleJobLogs('${job.id}', this)">View (${job.logCount})</button>` : '-'}
+            </td>
+          </tr>
+          <tr id="logs-row-${job.id}" style="display: none;">
+            <td colspan="7" style="background: var(--void); padding: 0.75rem 1.5rem;">
+              <pre id="logs-pre-${job.id}" style="margin: 0; font-size: 0.78rem; color: var(--smoke); white-space: pre-wrap; max-height: 280px; overflow-y: auto;">Loading logs…</pre>
+            </td>
           </tr>
         `).join('');
+
+        // Auto-refresh every 5s while any job is running
+        const anyRunning = data.jobs.some(j => j.status === 'running');
+        document.getElementById('scrape-live-indicator').style.display = anyRunning ? 'inline' : 'none';
+        if (anyRunning) startScrapePolling();
+        else stopScrapePolling();
       } catch (error) {
         console.error('Failed to load scraping:', error);
+      }
+    }
+
+    function startScrapePolling() {
+      if (scrapePollTimer) return;
+      scrapePollTimer = setInterval(() => {
+        // Only poll while the Scraping tab is visible
+        if (document.getElementById('tab-scraping').classList.contains('active')) {
+          loadScraping();
+        }
+      }, 5000);
+    }
+
+    function stopScrapePolling() {
+      if (scrapePollTimer) {
+        clearInterval(scrapePollTimer);
+        scrapePollTimer = null;
+      }
+    }
+
+    async function toggleJobLogs(jobId, btn) {
+      const row = document.getElementById(`logs-row-${jobId}`);
+      if (row.style.display === 'none') {
+        row.style.display = 'table-row';
+        btn.textContent = 'Hide';
+        try {
+          const data = await apiCall(`/admin/scrape/jobs/${jobId}`);
+          const pre = document.getElementById(`logs-pre-${jobId}`);
+          pre.textContent = (data.job.logs && data.job.logs.length > 0)
+            ? data.job.logs.join('\n')
+            : 'No log lines recorded.';
+        } catch (error) {
+          document.getElementById(`logs-pre-${jobId}`).textContent = 'Failed to load logs.';
+        }
+      } else {
+        row.style.display = 'none';
+        btn.textContent = 'View';
       }
     }
 
@@ -1237,6 +1319,7 @@
       document.getElementById('source-category').value = 'wisdom';
       document.getElementById('source-curated').checked = true;
       document.getElementById('source-scraping-enabled').checked = false;
+      document.getElementById('source-frequency').value = 'manual';
 
       // Update modal title and button
       document.getElementById('source-modal-title').textContent = 'Add Newsletter Source';
@@ -1261,6 +1344,7 @@
         document.getElementById('source-category').value = source.category || 'general';
         document.getElementById('source-curated').checked = source.isCurated !== false;
         document.getElementById('source-scraping-enabled').checked = source.scrapingEnabled === true;
+        document.getElementById('source-frequency').value = source.scrapeFrequency || 'manual';
 
         // Update modal title and button
         document.getElementById('source-modal-title').textContent = 'Edit Newsletter Source';
@@ -1290,6 +1374,7 @@
         category: document.getElementById('source-category').value,
         isCurated: document.getElementById('source-curated').checked,
         scrapingEnabled: document.getElementById('source-scraping-enabled').checked,
+        scrapeFrequency: document.getElementById('source-frequency').value,
       };
 
       if (!data.name || !data.senderEmail) {
@@ -1323,15 +1408,18 @@
     }
 
     async function triggerScrape(sourceId) {
-      if (!confirm('Start scraping this source?')) return;
+      if (!confirm('Start an incremental scrape for this source? Only editions we don\'t already have will be fetched.')) return;
 
       try {
-        await apiCall('/admin/scrape/trigger', {
+        const result = await apiCall('/admin/scrape/trigger', {
           method: 'POST',
           body: JSON.stringify({ sourceId }),
         });
-        alert('Scrape job queued. Run the scraper script to process.');
-        switchTab('scraping');
+        if (result.error) {
+          alert(result.error);
+          return;
+        }
+        switchTab('scraping'); // jump to the live jobs view
       } catch (error) {
         alert('Failed to trigger scrape');
       }
