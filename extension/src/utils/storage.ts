@@ -71,6 +71,15 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
 }
 
 // Life calculations
+
+/** Which week of your life this is (1-indexed): week #1,897 etc. */
+export function calculateWeekNumber(birthDate: string): number {
+  const birth = new Date(birthDate);
+  const now = new Date();
+  const msPerWeek = 7 * 24 * 60 * 60 * 1000;
+  return Math.max(1, Math.floor((now.getTime() - birth.getTime()) / msPerWeek) + 1);
+}
+
 export function calculateSundaysRemaining(birthDate: string, lifeExpectancy: number = 80): number {
   const birth = new Date(birthDate);
   const deathDate = new Date(birth);

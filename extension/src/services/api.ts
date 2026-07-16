@@ -150,6 +150,14 @@ export async function trackByteView(byteId: string, dwellTimeMs: number, isRead:
 }
 
 /**
+ * Fetch value-streak counters (bytes read today / all-time)
+ */
+export async function fetchByteStats(): Promise<{ bytesToday: number; bytesTotal: number }> {
+  const tz = new Date().getTimezoneOffset();
+  return apiRequest<{ bytesToday: number; bytesTotal: number }>(`/feed/stats?tz=${tz}`);
+}
+
+/**
  * Fetch popular bytes from the community (for empty feed)
  */
 export async function fetchPopularBytes(limit: number = 10): Promise<ContentByte[]> {
