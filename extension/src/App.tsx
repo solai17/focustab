@@ -8,8 +8,9 @@ import {
   getUserProfile,
   saveUserProfile,
   calculateSundaysRemaining,
-  calculatePercentLived,
+  calculateWeekNumber,
 } from './utils/storage';
+import { highestMilestoneReached, chipTooltip, type Milestone } from './data/milestones';
 import {
   initializeAuth,
   getChromeIdentity,
@@ -22,6 +23,7 @@ import {
 import {
   fetchNextByte,
   fetchSavedBytes,
+  fetchByteStats,
   voteByte,
   toggleSaveByte,
   trackByteView,
@@ -53,6 +55,10 @@ const QUEUE_STORAGE_KEY = 'byteletters_byte_queue';
 // exclusions so unread bytes don't repeat back-to-back
 const RECENT_STORAGE_KEY = 'byteletters_recent_byte_ids';
 const RECENT_IDS_LIMIT = 50;
+// Value-streak counters (bytes read today / all-time), cached for instant render
+const STATS_STORAGE_KEY = 'byteletters_byte_stats';
+// Highest milestone already celebrated (so each is celebrated exactly once)
+const CELEBRATED_STORAGE_KEY = 'byteletters_celebrated_milestone';
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
@@ -82,10 +88,49 @@ function App() {
   const currentByteRef = useRef<ContentByte | null>(null);
   // Recently shown byte IDs (rolling window, persisted)
   const recentIdsRef = useRef<string[]>([]);
+  // Value streak: bytes read today / all-time
+  const [byteStats, setByteStats] = useState<{ today: number; total: number } | null>(null);
+  // Milestone freshly crossed - this tab shows the amber celebration hero
+  const [milestoneCelebration, setMilestoneCelebration] = useState<Milestone | null>(null);
+  // Byte IDs already counted toward the streak this session (dedup optimistic increments)
+  const countedReadsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     currentByteRef.current = currentByte;
   }, [currentByte]);
+
+  // --- Value-streak helpers ---------------------------------------------
+  const applyStats = (stats: { bytesToday: number; bytesTotal: number }) => {
+    setByteStats({ today: stats.bytesToday, total: stats.bytesTotal });
+    void storage.set(STATS_STORAGE_KEY, { ...stats, date: new Date().toDateString() });
+  };
+
+  // Celebrate a milestone at most once, on the first tab opened after crossing it
+  const checkMilestone = async (total: number) => {
+    const reached = highestMilestoneReached(total);
+    const celebrated = await storage.get<number>(CELEBRATED_STORAGE_KEY);
+
+    if (celebrated === null) {
+      // First run for an existing user: initialize silently so we don't
+      // retroactively celebrate everything they've already read
+      await storage.set(CELEBRATED_STORAGE_KEY, reached?.at ?? 0);
+      return;
+    }
+
+    if (reached && reached.at > celebrated) {
+      setMilestoneCelebration(reached);
+      await storage.set(CELEBRATED_STORAGE_KEY, reached.at);
+    }
+  };
+
+  const refreshStats = () => {
+    fetchByteStats()
+      .then((stats) => {
+        applyStats(stats);
+        void checkMilestone(stats.bytesTotal);
+      })
+      .catch(() => {}); // Streak is decorative - never block the tab on it
+  };
 
   // --- Queue/session helpers -------------------------------------------
   const persistQueue = () => {
@@ -232,12 +277,23 @@ function App() {
     async function loadData() {
       try {
         // ---- FAST PATH: render from local cache immediately ----
-        const [cachedProfile, cachedQueue, cachedRecent] = await Promise.all([
+        const [cachedProfile, cachedQueue, cachedRecent, cachedStats] = await Promise.all([
           getUserProfile(),
           storage.get<ContentByte[]>(QUEUE_STORAGE_KEY),
           storage.get<string[]>(RECENT_STORAGE_KEY),
+          storage.get<{ bytesToday: number; bytesTotal: number; date?: string }>(STATS_STORAGE_KEY),
         ]);
         recentIdsRef.current = Array.isArray(cachedRecent) ? cachedRecent : [];
+
+        // Show cached streak instantly; zero the "today" count if the cache
+        // is from a previous day (server refresh corrects it shortly after)
+        if (cachedStats) {
+          const isToday = cachedStats.date === new Date().toDateString();
+          setByteStats({
+            today: isToday ? cachedStats.bytesToday : 0,
+            total: cachedStats.bytesTotal,
+          });
+        }
 
         let renderedFromCache = false;
         if (cachedProfile && Array.isArray(cachedQueue) && cachedQueue.length > 0) {
@@ -260,6 +316,7 @@ function App() {
           await saveUserProfile(userProfile);
           setProfile(userProfile);
           usingMockData.current = false;
+          refreshStats();
 
           if (renderedFromCache) {
             // Already showing content - just refill queue + refresh saved list
@@ -300,6 +357,7 @@ function App() {
               await saveUserProfile(userProfile);
               setProfile(userProfile);
               usingMockData.current = false;
+              refreshStats();
 
               if (renderedFromCache) {
                 void prefetchBytes();
@@ -456,6 +514,22 @@ function App() {
 
   // Handle view tracking with read status
   const handleView = useCallback(async (byteId: string, dwellTimeMs: number, isRead: boolean) => {
+    // Optimistically bump the value streak the first time a byte is read
+    // this session (server is the source of truth on next refresh)
+    if (isRead && !usingMockData.current && !countedReadsRef.current.has(byteId)) {
+      countedReadsRef.current.add(byteId);
+      setByteStats((prev) => {
+        if (!prev) return prev;
+        const next = { today: prev.today + 1, total: prev.total + 1 };
+        void storage.set(STATS_STORAGE_KEY, {
+          bytesToday: next.today,
+          bytesTotal: next.total,
+          date: new Date().toDateString(),
+        });
+        return next;
+      });
+    }
+
     // Only track views if using the API
     if (!usingMockData.current) {
       try {
@@ -664,6 +738,8 @@ function App() {
       'byteletters_last_byte',
       QUEUE_STORAGE_KEY,
       RECENT_STORAGE_KEY,
+      STATS_STORAGE_KEY,
+      CELEBRATED_STORAGE_KEY,
     ];
     for (const key of keys) {
       localStorage.removeItem(key);
@@ -703,8 +779,8 @@ function App() {
   }
 
   // Calculate life stats
-  const sundaysRemaining = calculateSundaysRemaining(profile.birthDate, profile.lifeExpectancy);
-  const percentLived = calculatePercentLived(profile.birthDate, profile.lifeExpectancy);
+  const weekNumber = calculateWeekNumber(profile.birthDate);
+  const weeksRemaining = calculateSundaysRemaining(profile.birthDate, profile.lifeExpectancy);
 
   return (
     <div className="min-h-screen bg-void relative overflow-hidden">
@@ -724,7 +800,24 @@ function App() {
         </div>
 
         {/* Right side buttons */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          {/* Value-streak chip: bytes read today / all-time */}
+          {byteStats && (
+            <div
+              className="hidden sm:flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate/50 border border-life/30 text-sm select-none cursor-default"
+              title={chipTooltip(byteStats.total)}
+            >
+              <span className="text-life leading-none">⚡</span>
+              <span className="text-smoke">
+                <b className="text-life font-semibold tabular-nums">{byteStats.today}</b> today
+              </span>
+              <span className="text-smoke/40">·</span>
+              <span className="text-smoke">
+                <b className="text-life font-semibold tabular-nums">{byteStats.total.toLocaleString()}</b> bytes
+              </span>
+            </div>
+          )}
+
           {/* Saved bytes button */}
           <button
             onClick={() => setShowSaved(true)}
@@ -762,11 +855,12 @@ function App() {
       {/* Main content */}
       <main className="relative z-10 min-h-screen flex flex-col items-center justify-center px-6 py-12">
         <div className="w-full max-w-3xl">
-          {/* Mortality Bar - Connects to Content */}
+          {/* The Ritual hero - dated imperative that hands off to the byte */}
           <MortalityBar
             name={profile.name}
-            sundaysRemaining={sundaysRemaining}
-            percentLived={percentLived}
+            weekNumber={weekNumber}
+            weeksRemaining={weeksRemaining}
+            milestone={milestoneCelebration}
           />
 
           {/* Content Byte */}

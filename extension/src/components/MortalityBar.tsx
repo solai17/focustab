@@ -1,9 +1,12 @@
 import { useMemo } from 'react';
+import type { Milestone } from '../data/milestones';
 
 interface MortalityBarProps {
   name: string;
-  sundaysRemaining: number;
-  percentLived: number;
+  weekNumber: number;
+  weeksRemaining: number;
+  /** When set, this tab celebrates a freshly crossed milestone (amber variant) */
+  milestone?: Milestone | null;
 }
 
 // Format name properly - get first word and capitalize
@@ -14,90 +17,61 @@ function formatDisplayName(name: string): string {
   const cleanName = name.includes('@') ? name.split('@')[0] : name;
 
   // Get first word (space-separated) for display
-  // But preserve dots in names that aren't email-like patterns
   const firstName = cleanName.includes('.') && cleanName.split('.').every(part => part.length <= 2)
-    ? cleanName.split('.')[0] // Likely email prefix like "john.doe" -> "John"
-    : cleanName.split(' ')[0]; // Normal name - just get first word
+    ? cleanName.split('.')[0]
+    : cleanName.split(' ')[0];
 
-  // Capitalize first letter
   return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
 }
 
-// Wisdom messages that connect mortality awareness to living intentionally
-const WISDOM_MESSAGES = [
-  "Time is your most precious currency.",
-  "Each moment is an invitation to live fully.",
-  "What matters most to you today?",
-  "Your attention shapes your reality.",
-  "Health and time—guard them wisely.",
-  "Make this moment count.",
-];
-
-export function MortalityBar({ name, sundaysRemaining, percentLived }: MortalityBarProps) {
+/**
+ * The Ritual hero: every tab opens with a dated, personal imperative that
+ * hands off - via a glowing thread - to the byte below it.
+ *
+ * Normal tab:     "Make week #1,897 count, Solai."
+ * Milestone tab:  "1,000 bytes, Solai." (amber, shown once per milestone)
+ */
+export function MortalityBar({ name, weekNumber, weeksRemaining, milestone }: MortalityBarProps) {
   const displayName = useMemo(() => formatDisplayName(name), [name]);
-  const formattedSundays = sundaysRemaining.toLocaleString();
 
-  // Select a consistent wisdom message based on the day
-  const wisdomMessage = useMemo(() => {
-    const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
-    return WISDOM_MESSAGES[dayOfYear % WISDOM_MESSAGES.length];
-  }, []);
+  if (milestone) {
+    return (
+      <div className="opacity-0 animate-fade-in text-center mb-2">
+        <p className="text-amber text-[0.68rem] uppercase tracking-[0.26em] mb-4">
+          Milestone reached
+        </p>
+        <h1 className="font-display text-3xl md:text-4xl font-medium text-pearl mb-3 text-balance">
+          <em className="not-italic text-amber tabular-nums">{milestone.at.toLocaleString()}</em>{' '}
+          bytes{displayName ? `, ${displayName}` : ''}.
+        </h1>
+        <p className="text-smoke text-[0.95rem]">{milestone.message}</p>
 
-  // Calculate life stages for visual representation
-  const lifeStage = useMemo(() => {
-    if (percentLived < 25) return { label: 'Spring', emoji: '🌱' };
-    if (percentLived < 50) return { label: 'Summer', emoji: '☀️' };
-    if (percentLived < 75) return { label: 'Autumn', emoji: '🍂' };
-    return { label: 'Winter', emoji: '❄️' };
-  }, [percentLived]);
+        {/* Amber thread into the byte */}
+        <div className="relative w-px h-11 mx-auto mt-5 mb-1 bg-gradient-to-b from-amber/70 to-amber/5">
+          <span className="absolute -top-[3px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] rounded-full bg-amber" />
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="opacity-0 animate-fade-in text-center">
-      {/* Wisdom Connection */}
-      <div className="mb-6">
-        <p className="text-smoke/60 text-sm italic mb-1">
-          {wisdomMessage}
-        </p>
-      </div>
-
-      {/* Main Counter */}
-      <div className="mb-6">
-        <p className="text-smoke text-xs uppercase tracking-[0.2em] mb-2">
-          {displayName ? `${displayName}'s` : 'Your'} Sundays Remaining
-        </p>
-        <h1 className="font-display text-6xl md:text-7xl font-medium text-pearl mb-3">
-          <span className="text-life">{formattedSundays}</span>
-        </h1>
-      </div>
-
-      {/* Life Journey Visualization */}
-      <div className="flex items-center justify-center gap-4 mb-4">
-        <span className="text-xs text-smoke/40">Birth</span>
-        <div className="relative w-48 h-2 bg-ash/30 rounded-full overflow-hidden">
-          {/* Lived portion */}
-          <div
-            className="absolute left-0 top-0 h-full bg-gradient-to-r from-life/40 via-life to-life/80 rounded-full transition-all duration-1000"
-            style={{ width: `${percentLived}%` }}
-          />
-          {/* Current position marker */}
-          <div
-            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-life rounded-full shadow-lg shadow-life/50 transition-all duration-1000"
-            style={{ left: `calc(${percentLived}% - 6px)` }}
-          />
-        </div>
-        <span className="text-xs text-smoke/40">{lifeStage.emoji}</span>
-      </div>
-
-      {/* Percentage */}
-      <p className="text-smoke/50 text-xs mb-8">
-        {percentLived.toFixed(0)}% of your journey
+    <div className="opacity-0 animate-fade-in text-center mb-2">
+      <p className="text-life text-[0.68rem] uppercase tracking-[0.26em] mb-4">
+        Byte-sized wisdom &middot; Every tab
+      </p>
+      <h1 className="font-display text-3xl md:text-4xl font-medium text-pearl mb-3 text-balance">
+        Make week{' '}
+        <em className="italic text-life tabular-nums">#{weekNumber.toLocaleString()}</em>{' '}
+        count{displayName ? `, ${displayName}` : ''}.
+      </h1>
+      <p className="text-smoke text-[0.95rem]">
+        <b className="text-pearl font-semibold tabular-nums">{weeksRemaining.toLocaleString()}</b>{' '}
+        weeks remain. Here&rsquo;s a byte to leave this tab wiser.
       </p>
 
-      {/* Subtle Divider */}
-      <div className="flex items-center justify-center gap-4 mb-6">
-        <div className="w-12 h-px bg-gradient-to-r from-transparent to-ash/30" />
-        <div className="w-1.5 h-1.5 rounded-full bg-life/20" />
-        <div className="w-12 h-px bg-gradient-to-l from-transparent to-ash/30" />
+      {/* Thread into the byte */}
+      <div className="relative w-px h-11 mx-auto mt-5 mb-1 bg-gradient-to-b from-life/70 to-life/5">
+        <span className="absolute -top-[3px] left-1/2 -translate-x-1/2 w-[5px] h-[5px] rounded-full bg-life" />
       </div>
     </div>
   );

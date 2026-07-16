@@ -322,15 +322,30 @@ router.post('/bytes/:id/view', async (req: AuthenticatedRequest, res: Response) 
       data: { viewCount: { increment: 1 } },
     });
 
-    // Record in history - only mark as read if explicitly confirmed
+    // Record in history - only mark as read if explicitly confirmed.
+    // readAt is stamped exactly once, on the false -> true transition,
+    // so the value streak counts each byte a single time.
+    const existingHistory = await prisma.contentHistory.findUnique({
+      where: { userId_byteId: { userId, byteId } },
+      select: { isRead: true },
+    });
+    const becameRead = !!isRead && !existingHistory?.isRead;
+
     await prisma.contentHistory.upsert({
       where: { userId_byteId: { userId, byteId } },
-      create: { userId, byteId, dwellTimeMs, isRead: isRead || false },
+      create: {
+        userId,
+        byteId,
+        dwellTimeMs,
+        isRead: isRead || false,
+        readAt: isRead ? new Date() : null,
+      },
       update: {
         shownAt: new Date(),
         dwellTimeMs,
         // Only upgrade to read, never downgrade
         ...(isRead ? { isRead: true } : {}),
+        ...(becameRead ? { readAt: new Date() } : {}),
       },
     });
 
@@ -374,6 +389,46 @@ router.post('/bytes/:id/save', async (req: AuthenticatedRequest, res: Response) 
   } catch (error) {
     console.error('Save error:', error);
     res.status(500).json({ error: 'Failed to save byte' });
+  }
+});
+
+/**
+ * GET /feed/stats
+ * Value-streak counters: bytes read today and all-time.
+ * Query params:
+ *   - tz: client timezone offset in minutes (Date.getTimezoneOffset()),
+ *     used to compute the user's local midnight for the "today" count
+ */
+router.get('/stats', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+
+    // Client sends Date.getTimezoneOffset(): (UTC - local) in minutes
+    const tzOffsetMin = Math.max(-840, Math.min(840, parseInt(req.query.tz as string) || 0));
+
+    // Find the user's local midnight, expressed in real UTC
+    const now = new Date();
+    const localNow = new Date(now.getTime() - tzOffsetMin * 60000);
+    const localMidnightFrame = Date.UTC(
+      localNow.getUTCFullYear(),
+      localNow.getUTCMonth(),
+      localNow.getUTCDate()
+    );
+    const todayStart = new Date(localMidnightFrame + tzOffsetMin * 60000);
+
+    const [bytesTotal, bytesToday] = await Promise.all([
+      prisma.contentHistory.count({
+        where: { userId, isRead: true },
+      }),
+      prisma.contentHistory.count({
+        where: { userId, isRead: true, readAt: { gte: todayStart } },
+      }),
+    ]);
+
+    res.json({ bytesToday, bytesTotal });
+  } catch (error) {
+    console.error('Stats error:', error);
+    res.status(500).json({ error: 'Failed to fetch stats' });
   }
 });
 
