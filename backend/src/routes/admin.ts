@@ -9,6 +9,7 @@ import { Router, Response, NextFunction } from 'express';
 import { prisma } from '../services/db';
 import { authenticateToken } from '../middleware/auth';
 import { AuthenticatedRequest } from '../types';
+import { runScrapeJob, isSourceScraping } from '../services/scraper';
 
 const router = Router();
 
@@ -170,7 +171,17 @@ router.get('/sources', async (req: AuthenticatedRequest, res: Response) => {
       prisma.newsletterSource.count({ where }),
     ]);
 
-    // Enrich with insight counts
+    // Latest edition date per source ("content up to") in one query
+    const latestEditions = await prisma.edition.groupBy({
+      by: ['sourceId'],
+      where: { sourceId: { in: sources.map((s: { id: string }) => s.id) } },
+      _max: { publishedAt: true },
+    });
+    const latestBySource = new Map<string, Date | null>(
+      latestEditions.map((e: { sourceId: string; _max: { publishedAt: Date | null } }) => [e.sourceId, e._max.publishedAt])
+    );
+
+    // Enrich with insight counts + freshness
     const enrichedSources = await Promise.all(
       sources.map(async (source) => {
         const insightCount = await prisma.contentByte.count({
@@ -181,6 +192,8 @@ router.get('/sources', async (req: AuthenticatedRequest, res: Response) => {
 
         return {
           ...source,
+          latestEditionAt: latestBySource.get(source.id) || null,
+          isScrapingNow: isSourceScraping(source.id),
           stats: {
             editions: source._count.editions,
             subscribers: source._count.subscriptions,
@@ -641,10 +654,14 @@ router.get('/scrape/jobs', async (req: AuthenticatedRequest, res: Response) => {
     const sourceMap = new Map(sources.map((s) => [s.id, s.name]));
 
     res.json({
-      jobs: jobs.map((j) => ({
-        ...j,
-        sourceName: sourceMap.get(j.sourceId) || 'Unknown',
-      })),
+      jobs: jobs.map((j: any) => {
+        const { logs, ...rest } = j;
+        return {
+          ...rest,
+          logCount: Array.isArray(logs) ? logs.length : 0, // full logs via /scrape/jobs/:id
+          sourceName: sourceMap.get(j.sourceId) || 'Unknown',
+        };
+      }),
       pagination: {
         page: parseInt(page as string),
         limit: parseInt(limit as string),
@@ -660,7 +677,8 @@ router.get('/scrape/jobs', async (req: AuthenticatedRequest, res: Response) => {
 
 /**
  * POST /admin/scrape/trigger
- * Trigger a scrape job for a source
+ * Start an incremental scrape for a source, running inside this server.
+ * Progress and logs land on the ScrapeJob row (poll GET /admin/scrape/jobs/:id).
  */
 router.post('/scrape/trigger', async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -680,20 +698,28 @@ router.post('/scrape/trigger', async (req: AuthenticatedRequest, res: Response) 
     }
 
     if (!source.archiveUrl) {
-      return res.status(400).json({ error: 'Source has no archive URL configured' });
+      return res.status(400).json({ error: 'Source has no archive URL configured - add one in Edit first' });
     }
 
-    // Create a scrape job record
+    if (isSourceScraping(sourceId)) {
+      return res.status(409).json({ error: 'A scrape for this source is already running' });
+    }
+
     const job = await prisma.scrapeJob.create({
       data: {
         sourceId,
+        status: 'running',
         triggeredBy: 'admin',
         adminUserId: adminId,
       },
     });
 
-    // TODO: Actually trigger the scrape (queue it for background processing)
-    // For now, we'll return the job ID and the actual scraping will be done separately
+    // Run in the background - the job row carries all progress
+    setImmediate(() => {
+      runScrapeJob(sourceId, job.id).catch((error) => {
+        console.error('[Admin] Scrape job crashed:', error);
+      });
+    });
 
     res.json({
       success: true,
@@ -701,13 +727,36 @@ router.post('/scrape/trigger', async (req: AuthenticatedRequest, res: Response) 
         id: job.id,
         sourceId,
         sourceName: source.name,
-        status: 'queued',
+        status: 'running',
       },
-      message: 'Scrape job queued. Run the scraper to process.',
+      message: 'Scrape started - watch progress in the Scraping tab.',
     });
   } catch (error) {
     console.error('[Admin] Trigger scrape error:', error);
     res.status(500).json({ error: 'Failed to trigger scrape' });
+  }
+});
+
+/**
+ * GET /admin/scrape/jobs/:id
+ * Single job with full logs (polled by the admin portal while running)
+ */
+router.get('/scrape/jobs/:id', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const job = await prisma.scrapeJob.findUnique({
+      where: { id: req.params.id },
+    });
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+    const source = await prisma.newsletterSource.findUnique({
+      where: { id: job.sourceId },
+      select: { name: true },
+    });
+    res.json({ job: { ...job, sourceName: source?.name || 'Unknown' } });
+  } catch (error) {
+    console.error('[Admin] Get scrape job error:', error);
+    res.status(500).json({ error: 'Failed to get scrape job' });
   }
 });
 

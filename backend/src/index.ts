@@ -15,6 +15,7 @@ import internalRoutes from './routes/internal';
 import adminRoutes from './routes/admin';
 import newslettersRoutes from './routes/newsletters';
 import { isMockDb } from './services/db';
+import { startScrapeScheduler } from './services/scrapeScheduler';
 import { securityHeaders, validateRequest, rateLimits, requestLogger } from './middleware/security';
 
 const app = express();
@@ -94,6 +95,11 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
   console.error('Unhandled error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });
+
+// Scheduled scraping (daily/weekly per source, honors scrapeFrequency)
+if (!isMockDb) {
+  startScrapeScheduler();
+}
 
 // Start server
 app.listen(PORT, () => {

@@ -339,6 +339,9 @@ model ScrapeJob {
   errorMessage    String?
   errorStack      String?
 
+  // Progress log lines shown in the admin portal
+  logs            String[]  @default([])
+
   // Triggered by
   triggeredBy     String    @default("manual") // manual, scheduled, admin
   adminUserId     String?   // If triggered by admin
