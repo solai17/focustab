@@ -23,7 +23,8 @@ import { prisma } from './db';
 // ---------------------------------------------------------------------------
 // Tuning
 // ---------------------------------------------------------------------------
-const MAX_LINKS_PER_RUN = 60;      // How many candidate article links to consider
+const MAX_LINKS_PER_PAGE = 60;     // Candidate article links per archive page
+const MAX_ARCHIVE_PAGES = 10;      // How deep to paginate per run
 const MAX_NEW_PER_RUN = 25;        // Stop after saving this many new editions
 const STOP_AFTER_CONSECUTIVE_KNOWN = 5; // Incremental cutoff
 const REQUEST_TIMEOUT_MS = 20000;
@@ -139,7 +140,73 @@ function discoverArticleLinks(html: string, archiveUrl: string): string[] {
     }
   });
 
-  return links.slice(0, MAX_LINKS_PER_RUN);
+  return links.slice(0, MAX_LINKS_PER_PAGE);
+}
+
+/** Read the page number out of a URL (?page=N or /page/N/), defaulting to 1. */
+function pageNumberOf(url: URL): number {
+  const fromQuery = parseInt(url.searchParams.get('page') || url.searchParams.get('p') || '', 10);
+  if (!isNaN(fromQuery) && fromQuery > 0) return fromQuery;
+  const match = url.pathname.match(/\/page\/(\d+)\/?$/i);
+  if (match) return parseInt(match[1], 10);
+  return 1;
+}
+
+/**
+ * Find the "next page" link of an archive (multi-page archives like
+ * beehiiv's ?page=2 or WordPress's /page/2/).
+ * Tries, in order: rel="next", next/older link text, numeric pagination.
+ */
+function findNextPageUrl(html: string, currentUrl: string): string | null {
+  const $ = cheerio.load(html);
+  const current = new URL(currentUrl);
+  const currentHost = current.hostname.replace(/^www\./, '');
+
+  const resolveSameSite = (href: string | undefined): string | null => {
+    if (!href) return null;
+    try {
+      const resolved = new URL(href, currentUrl);
+      if (!['http:', 'https:'].includes(resolved.protocol)) return null;
+      if (resolved.hostname.replace(/^www\./, '') !== currentHost) return null;
+      resolved.hash = '';
+      const clean = resolved.toString();
+      return clean !== currentUrl ? clean : null;
+    } catch {
+      return null;
+    }
+  };
+
+  // 1. Explicit rel="next"
+  const relNext =
+    resolveSameSite($('a[rel="next"]').attr('href')) ||
+    resolveSameSite($('link[rel="next"]').attr('href'));
+  if (relNext) return relNext;
+
+  // 2. Link text like "Next", "Older posts", "»", "→"
+  let textNext: string | null = null;
+  $('a[href]').each((_, el) => {
+    if (textNext) return;
+    const text = $(el).text().trim().toLowerCase();
+    if (/^(next( page)?|older( posts| entries)?|more posts|»|›|→|>)$/.test(text) || text === 'load more') {
+      textNext = resolveSameSite($(el).attr('href'));
+    }
+  });
+  if (textNext) return textNext;
+
+  // 3. Numeric pagination: a link whose page number is exactly current + 1
+  const wantPage = pageNumberOf(current) + 1;
+  let numericNext: string | null = null;
+  $('a[href]').each((_, el) => {
+    if (numericNext) return;
+    const resolved = resolveSameSite($(el).attr('href'));
+    if (!resolved) return;
+    try {
+      if (pageNumberOf(new URL(resolved)) === wantPage) numericNext = resolved;
+    } catch {
+      /* ignore */
+    }
+  });
+  return numericNext;
 }
 
 interface ExtractedArticle {
@@ -238,69 +305,101 @@ export async function runScrapeJob(sourceId: string, jobId: string): Promise<voi
 
     await appendLog(jobId, `Scraping ${source.name} from ${source.archiveUrl}`);
 
-    const archiveHtml = await fetchPage(source.archiveUrl);
-    const links = discoverArticleLinks(archiveHtml, source.archiveUrl);
-    found = links.length;
-    await appendLog(jobId, `Found ${links.length} candidate article links`);
-    await prisma.scrapeJob.update({ where: { id: jobId }, data: { editionsFound: found } });
-
-    if (links.length === 0) {
-      await appendLog(jobId, 'No article links found - this site may need the local browser scraper (npm run scrape).');
-    }
-
     let consecutiveKnown = 0;
+    let stopped = false;
+    const seenArticleUrls = new Set<string>();
+    const visitedPages = new Set<string>();
+    let archivePageUrl: string | null = source.archiveUrl;
 
-    for (const url of links) {
-      if (saved >= MAX_NEW_PER_RUN) {
-        await appendLog(jobId, `Reached per-run cap of ${MAX_NEW_PER_RUN} new editions - run again for more.`);
+    // Walk paginated archives (page 1, 2, ...) until caught up or capped
+    for (let pageNum = 1; pageNum <= MAX_ARCHIVE_PAGES && archivePageUrl && !stopped; pageNum++) {
+      visitedPages.add(archivePageUrl);
+
+      const archiveHtml = await fetchPage(archivePageUrl);
+      const pageLinks = discoverArticleLinks(archiveHtml, source.archiveUrl)
+        .filter((url) => !seenArticleUrls.has(url));
+      pageLinks.forEach((url) => seenArticleUrls.add(url));
+      found += pageLinks.length;
+
+      await appendLog(jobId, `Archive page ${pageNum}: ${pageLinks.length} article links`);
+      await prisma.scrapeJob.update({ where: { id: jobId }, data: { editionsFound: found } });
+
+      if (pageNum === 1 && pageLinks.length === 0) {
+        await appendLog(jobId, 'No article links found - this site may need the local browser scraper (npm run scrape).');
+      }
+
+      for (const url of pageLinks) {
+        if (saved >= MAX_NEW_PER_RUN) {
+          await appendLog(jobId, `Reached per-run cap of ${MAX_NEW_PER_RUN} new editions - run again for more.`);
+          stopped = true;
+          break;
+        }
+        if (consecutiveKnown >= STOP_AFTER_CONSECUTIVE_KNOWN) {
+          await appendLog(jobId, `Hit ${STOP_AFTER_CONSECUTIVE_KNOWN} already-stored editions in a row - caught up.`);
+          stopped = true;
+          break;
+        }
+
+        await politeDelay();
+
+        let pageHtml: string;
+        try {
+          pageHtml = await fetchPage(url);
+        } catch (error) {
+          if (error instanceof BlockedError) throw error; // stop the whole run
+          await appendLog(jobId, `Skipped (fetch failed): ${url}`);
+          continue;
+        }
+
+        const article = extractArticle(pageHtml, url);
+        if (!article) {
+          await appendLog(jobId, `Skipped (no substantial content): ${url}`);
+          continue;
+        }
+
+        const hash = contentHash(url, article.text);
+        const existing = await prisma.edition.findUnique({ where: { contentHash: hash } });
+        if (existing) {
+          skipped++;
+          consecutiveKnown++;
+          continue;
+        }
+        consecutiveKnown = 0;
+
+        await prisma.edition.create({
+          data: {
+            sourceId: source.id,
+            subject: article.title,
+            contentHash: hash,
+            rawContent: article.html,
+            textContent: article.text,
+            publishedAt: article.publishedAt,
+            receivedAt: new Date(),
+            processingStatus: 'pending',
+          },
+        });
+        saved++;
+        await appendLog(jobId, `Saved: "${article.title.substring(0, 60)}" (${article.publishedAt.toISOString().slice(0, 10)})`);
+        await prisma.scrapeJob.update({ where: { id: jobId }, data: { editionsNew: saved, editionsSkipped: skipped } });
+      }
+
+      if (stopped) break;
+
+      // Follow pagination (beehiiv ?page=2, WordPress /page/2/, rel=next, "Older posts")
+      const nextPage = findNextPageUrl(archiveHtml, archivePageUrl);
+      if (!nextPage || visitedPages.has(nextPage)) {
+        if (pageNum > 1 || nextPage === null) {
+          await appendLog(jobId, `No further archive pages after page ${pageNum}.`);
+        }
         break;
       }
-      if (consecutiveKnown >= STOP_AFTER_CONSECUTIVE_KNOWN) {
-        await appendLog(jobId, `Hit ${STOP_AFTER_CONSECUTIVE_KNOWN} already-stored editions in a row - caught up.`);
+      if (pageNum === MAX_ARCHIVE_PAGES) {
+        await appendLog(jobId, `Reached the ${MAX_ARCHIVE_PAGES}-page cap for this run - run again to go deeper.`);
         break;
       }
-
+      await appendLog(jobId, `Following pagination -> ${nextPage}`);
       await politeDelay();
-
-      let pageHtml: string;
-      try {
-        pageHtml = await fetchPage(url);
-      } catch (error) {
-        if (error instanceof BlockedError) throw error; // stop the whole run
-        await appendLog(jobId, `Skipped (fetch failed): ${url}`);
-        continue;
-      }
-
-      const article = extractArticle(pageHtml, url);
-      if (!article) {
-        await appendLog(jobId, `Skipped (no substantial content): ${url}`);
-        continue;
-      }
-
-      const hash = contentHash(url, article.text);
-      const existing = await prisma.edition.findUnique({ where: { contentHash: hash } });
-      if (existing) {
-        skipped++;
-        consecutiveKnown++;
-        continue;
-      }
-      consecutiveKnown = 0;
-
-      await prisma.edition.create({
-        data: {
-          sourceId: source.id,
-          subject: article.title,
-          contentHash: hash,
-          rawContent: article.html,
-          textContent: article.text,
-          publishedAt: article.publishedAt,
-          receivedAt: new Date(),
-          processingStatus: 'pending',
-        },
-      });
-      saved++;
-      await appendLog(jobId, `Saved: "${article.title.substring(0, 60)}" (${article.publishedAt.toISOString().slice(0, 10)})`);
-      await prisma.scrapeJob.update({ where: { id: jobId }, data: { editionsNew: saved, editionsSkipped: skipped } });
+      archivePageUrl = nextPage;
     }
 
     // Finalize job + source bookkeeping
