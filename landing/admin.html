@@ -942,20 +942,20 @@
             <div class="value">${data.insights.total}</div>
           </div>
           <div class="stat-card">
-            <h3>Pending Moderation</h3>
-            <div class="value amber">${data.insights.pendingModeration}</div>
+            <h3>Unaudited Insights</h3>
+            <div class="value amber">${data.insights.unaudited ?? 0}</div>
           </div>
           <div class="stat-card">
-            <h3>Rejected</h3>
-            <div class="value rose">${data.insights.rejected}</div>
+            <h3>Hidden Insights</h3>
+            <div class="value rose">${data.insights.hidden ?? 0}</div>
           </div>
           <div class="stat-card">
             <h3>Downvoted</h3>
             <div class="value rose">${data.insights.downvoted}</div>
           </div>
           <div class="stat-card">
-            <h3>Forwarded Emails</h3>
-            <div class="value amber">${data.forwardedEmails.pending}</div>
+            <h3>Pending Recommendations</h3>
+            <div class="value amber">${data.recommendations?.pending ?? 0}</div>
           </div>
           <div class="stat-card">
             <h3>Processing Queue</h3>
@@ -979,8 +979,8 @@
 
         tbody.innerHTML = data.sources.map(source => `
           <tr>
-            <td><strong>${source.name}</strong></td>
-            <td><span class="badge badge-info">${source.category}</span></td>
+            <td><strong>${escapeHtml(source.name)}</strong></td>
+            <td><span class="badge badge-info">${escapeHtml(source.category)}</span></td>
             <td>${source.stats.editions}</td>
             <td>${source.stats.insights}</td>
             <td>${source.stats.subscribers}</td>
@@ -998,7 +998,7 @@
         // Also populate source filter
         const filter = document.getElementById('insights-source-filter');
         filter.innerHTML = '<option value="">All Sources</option>' +
-          data.sources.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+          data.sources.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
       } catch (error) {
         console.error('Failed to load sources:', error);
       }
@@ -1014,18 +1014,25 @@
           return;
         }
 
-        tbody.innerHTML = data.recommendations.map(rec => `
+        tbody.innerHTML = data.recommendations.map(rec => {
+          // Only render as a clickable link when the URL is http(s) -
+          // anything else (javascript:, data:, ...) is shown as plain text
+          const isSafeUrl = /^https?:\/\//i.test(rec.url || '');
+          const urlCell = isSafeUrl
+            ? `<a href="${escapeHtml(rec.url)}" target="_blank" rel="noopener noreferrer" style="color: var(--life);">${escapeHtml(rec.url)}</a>`
+            : escapeHtml(rec.url || '');
+          return `
           <tr>
             <td><strong>${escapeHtml(rec.name)}</strong></td>
-            <td><a href="${escapeHtml(rec.url)}" target="_blank" style="color: var(--life);">${escapeHtml(rec.url)}</a></td>
-            <td>${rec.userEmail || 'Anonymous'}</td>
+            <td>${urlCell}</td>
+            <td>${escapeHtml(rec.userEmail || 'Anonymous')}</td>
             <td>${new Date(rec.createdAt).toLocaleDateString()}</td>
             <td>
               <button class="btn btn-primary" onclick="approveRecommendation('${rec.id}')">Add as Source</button>
               <button class="btn btn-danger" onclick="rejectRecommendation('${rec.id}')">Reject</button>
             </td>
           </tr>
-        `).join('');
+        `;}).join('');
       } catch (error) {
         console.error('Failed to load recommendations:', error);
       }
@@ -1101,7 +1108,7 @@
                 <span style="color: var(--smoke);">Quality: ${(insight.qualityScore * 100).toFixed(0)}%</span>
               </div>
               <span style="color: var(--smoke); font-size: 0.85rem;">
-                ${insight.source?.name || 'Unknown Source'}
+                ${escapeHtml(insight.source?.name || 'Unknown Source')}
               </span>
             </div>
             <div class="insight-content collapsed" onclick="toggleInsightContent(this)">
@@ -1183,8 +1190,8 @@
 
         tbody.innerHTML = data.emails.map(email => `
           <tr>
-            <td><strong>${email.fromName || email.fromEmail}</strong><br><small>${email.fromEmail}</small></td>
-            <td>${email.subject}</td>
+            <td><strong>${escapeHtml(email.fromName || email.fromEmail)}</strong><br><small>${escapeHtml(email.fromEmail)}</small></td>
+            <td>${escapeHtml(email.subject)}</td>
             <td>${new Date(email.receivedAt).toLocaleString()}</td>
             <td><span class="badge ${getStatusBadge(email.status)}">${email.status}</span></td>
             <td>
@@ -1212,13 +1219,13 @@
 
         tbody.innerHTML = data.jobs.map(job => `
           <tr>
-            <td><strong>${job.sourceName}</strong></td>
+            <td><strong>${escapeHtml(job.sourceName)}</strong></td>
             <td>${new Date(job.startedAt).toLocaleString()}</td>
-            <td><span class="badge ${getStatusBadge(job.status)}">${job.status}</span></td>
+            <td><span class="badge ${getStatusBadge(job.status)}">${escapeHtml(job.status)}</span></td>
             <td>${job.editionsFound}</td>
             <td>${job.editionsNew}</td>
             <td>${job.insightsCreated}</td>
-            <td>${job.errorMessage ? `<span style="color: var(--rose);">${job.errorMessage}</span>` : '-'}</td>
+            <td>${job.errorMessage ? `<span style="color: var(--rose);">${escapeHtml(job.errorMessage)}</span>` : '-'}</td>
           </tr>
         `).join('');
       } catch (error) {

@@ -913,18 +913,25 @@ async function saveEditions(config: NewsletterConfig, editions: EditionData[]) {
         senderEmail: config.senderEmail,
         senderDomain: config.senderEmail.split('@')[1],
         website: config.website,
+        archiveUrl: config.archiveUrl,
         category: config.category,
         description: `${config.name} by ${config.author}`,
-        isVerified: true, // Curated quality sources
+        isVerified: true,      // Curated quality sources
+        isCurated: true,       // These configs ARE the curated set - make them visible to users
+        scrapingEnabled: true, // Allow re-scraping from admin
       },
     });
     console.log(`[${config.name}] Created newsletter source`);
   } else {
-    // Update website if not set
-    if (!source.website) {
+    // Backfill fields that may be missing on older records
+    const patch: Record<string, unknown> = {};
+    if (!source.website) patch.website = config.website;
+    if (!source.archiveUrl) patch.archiveUrl = config.archiveUrl;
+    if (!source.scrapingEnabled) patch.scrapingEnabled = true;
+    if (Object.keys(patch).length > 0) {
       await prisma.newsletterSource.update({
         where: { id: source.id },
-        data: { website: config.website },
+        data: patch,
       });
     }
     console.log(`[${config.name}] Using existing newsletter source`);
@@ -980,8 +987,43 @@ async function saveEditions(config: NewsletterConfig, editions: EditionData[]) {
     }
   }
 
+  // Record scrape outcome on the source so admin shows fresh status
+  await prisma.newsletterSource.update({
+    where: { id: source.id },
+    data: {
+      lastScrapedAt: new Date(),
+      lastScrapeStatus: 'success',
+      lastScrapeError: null,
+    },
+  });
+
   console.log(`[${config.name}] Saved ${saved} editions, skipped ${skipped} duplicates`);
   return { saved, skipped };
+}
+
+/**
+ * Recompute per-source aggregate stats (totalEditions / totalInsights).
+ * These power the admin dashboard and the extension's Sources screen -
+ * without this sync every source shows "0 insights" forever.
+ */
+async function syncSourceStats() {
+  console.log('\n[Stats] Syncing source edition/insight counts...');
+  const sources = await prisma.newsletterSource.findMany({ select: { id: true, name: true } });
+
+  for (const source of sources) {
+    const [editionCount, insightCount] = await Promise.all([
+      prisma.edition.count({ where: { sourceId: source.id } }),
+      prisma.contentByte.count({
+        where: { edition: { sourceId: source.id }, isHidden: false },
+      }),
+    ]);
+
+    await prisma.newsletterSource.update({
+      where: { id: source.id },
+      data: { totalEditions: editionCount, totalInsights: insightCount },
+    });
+    console.log(`  [Stats] ${source.name}: ${editionCount} editions, ${insightCount} insights`);
+  }
 }
 
 // =============================================================================
@@ -1046,6 +1088,13 @@ async function main() {
 
   // Close browser if opened
   await closeBrowser();
+
+  // Keep source aggregate counts accurate
+  try {
+    await syncSourceStats();
+  } catch (error) {
+    console.error('[Stats] Failed to sync source stats:', error);
+  }
 
   // Print queue stats
   console.log('\n' + '='.repeat(60));

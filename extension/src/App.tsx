@@ -4,6 +4,7 @@ import { Settings as SettingsIcon, Bookmark, BookmarkCheck, ChevronDown, Chevron
 const ByteLettersLogo = '/icons/icon128.png';
 import type { UserProfile, ContentByte, VoteValue } from './types';
 import {
+  storage,
   getUserProfile,
   saveUserProfile,
   calculateSundaysRemaining,
@@ -47,6 +48,12 @@ function userToProfile(user: AuthUser): UserProfile {
 
 // Prefetch queue size - how many bytes to keep ready
 const PREFETCH_QUEUE_SIZE = 3;
+// Persisted queue so a brand-new tab renders instantly from local storage
+const QUEUE_STORAGE_KEY = 'byteletters_byte_queue';
+// Rolling window of recently shown byte IDs - sent to the server as
+// exclusions so unread bytes don't repeat back-to-back
+const RECENT_STORAGE_KEY = 'byteletters_recent_byte_ids';
+const RECENT_IDS_LIMIT = 50;
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
@@ -69,9 +76,42 @@ function App() {
   const [, setHasUserSubscriptions] = useState(false);
   // Track if using mock data (offline fallback)
   const usingMockData = useRef(false);
-  // Prefetch queue for instant Next button
+  // Prefetch queue for instant Next button (mirrored to chrome.storage)
   const byteQueueRef = useRef<ContentByte[]>([]);
   const isFetchingRef = useRef(false);
+  // Ref mirror of currentByte so callbacks never work off a stale closure
+  const currentByteRef = useRef<ContentByte | null>(null);
+  // Recently shown byte IDs (rolling window, persisted)
+  const recentIdsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    currentByteRef.current = currentByte;
+  }, [currentByte]);
+
+  // --- Queue/session helpers -------------------------------------------
+  const persistQueue = () => {
+    void storage.set(QUEUE_STORAGE_KEY, byteQueueRef.current);
+  };
+
+  const rememberShown = (byteId: string) => {
+    recentIdsRef.current = [
+      ...recentIdsRef.current.filter((id) => id !== byteId),
+      byteId,
+    ].slice(-RECENT_IDS_LIMIT);
+    void storage.set(RECENT_STORAGE_KEY, recentIdsRef.current);
+  };
+
+  // Everything the server should NOT send back: what's on screen, what's
+  // queued locally, and what was shown recently
+  const getExcludeIds = (): string[] => {
+    return [
+      ...new Set([
+        ...(currentByteRef.current ? [currentByteRef.current.id] : []),
+        ...byteQueueRef.current.map((b) => b.id),
+        ...recentIdsRef.current,
+      ]),
+    ];
+  };
 
   // Format category for display (capitalize first letter)
   const formatCategory = (category: string) => {
@@ -163,7 +203,7 @@ function App() {
   }> {
     try {
       const [nextByteResult, savedResult] = await Promise.all([
-        fetchNextByte(),
+        fetchNextByte(getExcludeIds()),
         fetchSavedBytes(),
       ]);
       usingMockData.current = false;
@@ -187,27 +227,61 @@ function App() {
     }
   }
 
-  // Load initial data with auto-login
+  // Load initial data - cache-first for instant new-tab render,
+  // then authenticate and sync with the server in the background
   useEffect(() => {
     async function loadData() {
       try {
-        // Try to restore authenticated session
+        // ---- FAST PATH: render from local cache immediately ----
+        const [cachedProfile, cachedQueue, cachedRecent] = await Promise.all([
+          getUserProfile(),
+          storage.get<ContentByte[]>(QUEUE_STORAGE_KEY),
+          storage.get<string[]>(RECENT_STORAGE_KEY),
+        ]);
+        recentIdsRef.current = Array.isArray(cachedRecent) ? cachedRecent : [];
+
+        let renderedFromCache = false;
+        if (cachedProfile && Array.isArray(cachedQueue) && cachedQueue.length > 0) {
+          byteQueueRef.current = cachedQueue;
+          const firstByte = byteQueueRef.current.shift()!;
+          persistQueue();
+          rememberShown(firstByte.id);
+          setProfile(cachedProfile);
+          setCurrentByte(firstByte);
+          setQueueSize(byteQueueRef.current.length);
+          setIsLoading(false); // Tab is interactive NOW - rest happens in background
+          renderedFromCache = true;
+        }
+
+        // ---- BACKGROUND: authenticate and sync ----
         const authState = await initializeAuth();
 
         if (authState.isAuthenticated && authState.user) {
-          // User is authenticated - convert to profile and use
           const userProfile = userToProfile(authState.user);
           await saveUserProfile(userProfile);
           setProfile(userProfile);
+          usingMockData.current = false;
 
-          // Load bytes and saved bytes from API
-          const result = await loadFromApi();
-          setCurrentByte(result.byte);
-          setQueueSize(result.queueSize);
-          setSavedBytes(result.saved);
-          setHasUserSubscriptions(result.hasUserSubscriptions);
-          setIsCommunityContent(result.isCommunityContent);
-          // Prefetch will be triggered by useEffect below
+          if (renderedFromCache) {
+            // Already showing content - just refill queue + refresh saved list
+            void prefetchBytes();
+            fetchSavedBytes().then(setSavedBytes).catch(() => {});
+          } else {
+            const result = await loadFromApi();
+            if (result.byte) rememberShown(result.byte.id);
+            setCurrentByte(result.byte);
+            setQueueSize(result.queueSize);
+            setSavedBytes(result.saved);
+            setHasUserSubscriptions(result.hasUserSubscriptions);
+            setIsCommunityContent(result.isCommunityContent);
+            void prefetchBytes();
+          }
+          return;
+        }
+
+        // Server unreachable but we have a session + cached content:
+        // keep showing the cache, don't downgrade to mock or log out
+        if (authState.error === 'offline' && renderedFromCache) {
           return;
         }
 
@@ -226,15 +300,21 @@ function App() {
               const userProfile = userToProfile(user);
               await saveUserProfile(userProfile);
               setProfile(userProfile);
+              usingMockData.current = false;
 
-              // Load bytes and saved bytes from API
-              const result = await loadFromApi();
-              setCurrentByte(result.byte);
-              setQueueSize(result.queueSize);
-              setSavedBytes(result.saved);
-              setHasUserSubscriptions(result.hasUserSubscriptions);
-              setIsCommunityContent(result.isCommunityContent);
-              // Prefetch will be triggered by useEffect below
+              if (renderedFromCache) {
+                void prefetchBytes();
+                fetchSavedBytes().then(setSavedBytes).catch(() => {});
+              } else {
+                const result = await loadFromApi();
+                if (result.byte) rememberShown(result.byte.id);
+                setCurrentByte(result.byte);
+                setQueueSize(result.queueSize);
+                setSavedBytes(result.saved);
+                setHasUserSubscriptions(result.hasUserSubscriptions);
+                setIsCommunityContent(result.isCommunityContent);
+                void prefetchBytes();
+              }
               return;
             }
             // New user or incomplete onboarding - show onboarding
@@ -243,11 +323,13 @@ function App() {
           }
         }
 
-        // Fall back to local profile (legacy/offline mode)
-        const savedProfile = await getUserProfile();
-        setProfile(savedProfile);
+        // Keep the cached view rather than downgrading to demo content
+        if (renderedFromCache) return;
 
-        if (savedProfile) {
+        // Fall back to local profile (legacy/offline mode)
+        setProfile(cachedProfile);
+
+        if (cachedProfile) {
           // Use mock data for offline/demo mode
           usingMockData.current = true;
           const byte = getNextMockByte();
@@ -262,6 +344,7 @@ function App() {
     }
 
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Handle onboarding completion
@@ -271,11 +354,13 @@ function App() {
 
     // Try to load from API, fallback to mock
     const result = await loadFromApi();
+    if (result.byte) rememberShown(result.byte.id);
     setCurrentByte(result.byte);
     setQueueSize(result.queueSize);
     setSavedBytes(result.saved);
     setHasUserSubscriptions(result.hasUserSubscriptions);
     setIsCommunityContent(result.isCommunityContent);
+    void prefetchBytes();
   };
 
   // Handle vote
@@ -382,43 +467,39 @@ function App() {
     }
   }, []);
 
-  // Prefetch bytes in background to fill the queue
+  // Prefetch bytes in background to fill the queue.
+  // Bounded loop (no recursion) with server-side exclusions - a duplicate
+  // or empty response terminates the loop instead of refetching forever.
   const prefetchBytes = useCallback(async () => {
-    // Don't fetch if already fetching or using mock data
     if (isFetchingRef.current || usingMockData.current) return;
-    // Don't fetch if queue is full enough
-    if (byteQueueRef.current.length >= PREFETCH_QUEUE_SIZE) return;
-
     isFetchingRef.current = true;
 
     try {
-      const result = await fetchNextByte();
-      if (result.byte) {
-        // Add to queue if not already there (avoid duplicates)
-        const isDuplicate = byteQueueRef.current.some(b => b.id === result.byte!.id);
-        if (!isDuplicate) {
-          byteQueueRef.current.push(result.byte);
-        }
+      let attempts = 0;
+      const maxAttempts = PREFETCH_QUEUE_SIZE + 2;
+
+      while (byteQueueRef.current.length < PREFETCH_QUEUE_SIZE && attempts < maxAttempts) {
+        attempts++;
+        const result = await fetchNextByte(getExcludeIds());
+
+        if (!result.byte) break; // Server has nothing new for us
+
+        const isDuplicate =
+          result.byte.id === currentByteRef.current?.id ||
+          byteQueueRef.current.some((b) => b.id === result.byte!.id);
+        if (isDuplicate) break; // Nothing outside our exclusions - stop
+
+        byteQueueRef.current.push(result.byte);
+        persistQueue();
         setQueueSize(result.queueSize + byteQueueRef.current.length);
         setHasUserSubscriptions(result.hasUserSubscriptions);
-
-        // Keep fetching until queue is full
-        if (byteQueueRef.current.length < PREFETCH_QUEUE_SIZE) {
-          isFetchingRef.current = false;
-          prefetchBytes();
-          return;
-        }
-      } else {
-        // No more bytes from API
-        if (byteQueueRef.current.length === 0) {
-          usingMockData.current = true;
-        }
       }
     } catch (error) {
       console.error('Prefetch error:', error);
     } finally {
       isFetchingRef.current = false;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Handle next byte - INSTANT from prefetch queue
@@ -433,19 +514,19 @@ function App() {
       return;
     }
 
-    // Try to get next byte from prefetch queue (INSTANT)
+    // Instant path: pop from prefetch queue
     if (byteQueueRef.current.length > 0) {
       const nextByte = byteQueueRef.current.shift()!;
+      persistQueue();
+      rememberShown(nextByte.id);
       setCurrentByte(nextByte);
       setQueueSize(prev => Math.max(0, prev - 1));
       setIsCommunityContent(false);
-
-      // Trigger background prefetch to refill queue
-      prefetchBytes();
+      void prefetchBytes(); // Refill in background
       return;
     }
 
-    // Queue empty - use mock data as fallback (still instant)
+    // Offline/demo mode - mock data is instant
     if (usingMockData.current) {
       const byte = getNextMockByte();
       setCurrentByte(byte);
@@ -454,45 +535,48 @@ function App() {
       return;
     }
 
-    // Queue empty but not using mock - fetch directly (only case with delay)
-    // This should rarely happen if prefetch is working
+    // Queue empty - single fetch with a visible spinner (rare if prefetch works)
     setIsLoadingNext(true);
-    fetchNextByte().then(result => {
-      if (result.byte) {
-        setCurrentByte(result.byte);
-        setQueueSize(result.queueSize);
-        setIsCommunityContent(result.isCommunityContent);
-        setHasUserSubscriptions(result.hasUserSubscriptions);
-      } else {
-        usingMockData.current = true;
-        const mockByte = getNextMockByte();
-        setCurrentByte(mockByte);
-        setQueueSize(SAMPLE_BYTES.length);
-        setIsCommunityContent(true);
-      }
-      // Start prefetching for next time
-      prefetchBytes();
-    }).catch(() => {
-      usingMockData.current = true;
-      const byte = getNextMockByte();
-      setCurrentByte(byte);
-      setQueueSize(SAMPLE_BYTES.length);
-      setIsCommunityContent(true);
-    }).finally(() => {
-      setIsLoadingNext(false);
-    });
-  }, [showingCommunityBytes, communityBytes, communityByteIndex, prefetchBytes]);
+    fetchNextByte(getExcludeIds())
+      .then(async (result) => {
+        if (result.byte) {
+          rememberShown(result.byte.id);
+          setCurrentByte(result.byte);
+          setQueueSize(result.queueSize);
+          setHasUserSubscriptions(result.hasUserSubscriptions);
+          void prefetchBytes();
+          return;
+        }
 
-  // Start prefetching when initial byte is loaded (runs once after first byte shows)
-  useEffect(() => {
-    if (!isLoading && currentByte && !usingMockData.current && byteQueueRef.current.length === 0) {
-      // Small delay to let initial render complete, then start filling the queue
-      const timer = setTimeout(() => {
-        prefetchBytes();
-      }, 300);
-      return () => clearTimeout(timer);
-    }
-  }, [isLoading, currentByte, prefetchBytes]);
+        // Server is out of NEW content. If our recent-window is what's
+        // blocking, clear it and retry once so unread bytes can cycle again.
+        if (recentIdsRef.current.length > 0) {
+          recentIdsRef.current = [];
+          void storage.set(RECENT_STORAGE_KEY, []);
+          const retry = await fetchNextByte(getExcludeIds());
+          if (retry.byte) {
+            rememberShown(retry.byte.id);
+            setCurrentByte(retry.byte);
+            setQueueSize(retry.queueSize);
+            void prefetchBytes();
+            return;
+          }
+        }
+
+        // Genuinely caught up - show the "All caught up" state
+        setCurrentByte(null);
+        setQueueSize(0);
+      })
+      .catch((error) => {
+        // Transient API error: keep showing the current byte instead of
+        // silently swapping in canned demo quotes
+        console.error('Failed to fetch next byte:', error);
+      })
+      .finally(() => {
+        setIsLoadingNext(false);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showingCommunityBytes, communityBytes, communityByteIndex, prefetchBytes]);
 
   // Update profile
   const handleUpdateProfile = async (updatedProfile: UserProfile) => {
@@ -512,12 +596,16 @@ function App() {
             enableRecommendations: updatedProfile.enableRecommendations,
           });
 
-          // Reload feed after enableRecommendations change
+          // Feed basis changed - drop the stale prefetch queue and reload
+          byteQueueRef.current = [];
+          persistQueue();
           const result = await loadFromApi();
+          if (result.byte) rememberShown(result.byte.id);
           setCurrentByte(result.byte);
           setQueueSize(result.queueSize);
           setHasUserSubscriptions(result.hasUserSubscriptions);
           setIsCommunityContent(result.isCommunityContent);
+          void prefetchBytes();
         }
       } catch (error) {
         console.error('Failed to sync profile to backend:', error);
@@ -540,6 +628,8 @@ function App() {
       'byteletters_byte_votes',
       'byteletters_shown_bytes',
       'byteletters_last_byte',
+      QUEUE_STORAGE_KEY,
+      RECENT_STORAGE_KEY,
     ];
     for (const key of keys) {
       localStorage.removeItem(key);
@@ -556,6 +646,8 @@ function App() {
 
     // Reset state
     usingMockData.current = false;
+    byteQueueRef.current = [];
+    recentIdsRef.current = [];
     setProfile(null);
     setCurrentByte(null);
     setSavedBytes([]);

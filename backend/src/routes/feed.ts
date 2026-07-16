@@ -110,10 +110,22 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
  * GET /feed/next
  * Get single next byte for new tab experience
  * v3.0: Only shows bytes from user's subscribed curated sources
+ *
+ * Query params:
+ *   - exclude: comma-separated byte IDs the client already has queued/shown
+ *     (session-level dedup so consecutive calls don't return the same byte)
  */
 router.get('/next', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.userId!;
+
+    // Parse client-side exclusions (current byte + prefetch queue + recently shown)
+    const excludeParam = (req.query.exclude as string | undefined) || '';
+    const sessionExcludeIds = excludeParam
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s))
+      .slice(0, 100); // Cap to keep query size bounded
 
     // Get user with history, subscriptions, and engagements
     const user = await prisma.user.findUnique({
@@ -144,9 +156,10 @@ router.get('/next', async (req: AuthenticatedRequest, res: Response) => {
     }
 
     // Exclude bytes that user has read OR interacted with (voted/saved)
+    // plus anything the client session already has in hand
     const readByteIds = user.contentHistory.map((h) => h.byteId);
     const interactedByteIds = user.engagements.map((e) => e.byteId);
-    const seenByteIds = [...new Set([...readByteIds, ...interactedByteIds])];
+    const seenByteIds = [...new Set([...readByteIds, ...interactedByteIds, ...sessionExcludeIds])];
     const userSourceIds = user.subscriptions.map((s) => s.sourceId);
     const hasUserSubscriptions = userSourceIds.length > 0;
 
@@ -418,6 +431,9 @@ router.get('/saved', async (req: AuthenticatedRequest, res: Response) => {
 /**
  * v3.0: Get bytes only from user's subscribed curated sources
  * This is the primary feed function for the new curated content model
+ *
+ * Selection is randomized among a pool of top-quality candidates so
+ * consecutive calls don't deterministically return the same byte.
  */
 async function getCuratedFeed(
   userId: string,
@@ -429,11 +445,14 @@ async function getCuratedFeed(
     return [];
   }
 
-  // Get bytes from subscribed sources that have been approved (or pending moderation)
-  // Exclude rejected insights
+  // Fetch a healthy pool of top candidates (previously limit*3 which was
+  // only 3 rows for the new-tab case - far too few for variety)
+  const poolSize = Math.max(limit * 5, 30);
+
   const bytes = await prisma.contentByte.findMany({
     where: {
       id: { notIn: excludeIds },
+      isHidden: false, // Never serve admin-hidden content
       edition: {
         sourceId: { in: sourceIds },
         source: { isCurated: true }, // Only from curated sources
@@ -449,37 +468,34 @@ async function getCuratedFeed(
       { engagementScore: 'desc' },
       { createdAt: 'desc' },
     ],
-    take: limit * 3, // Get more for diversity filtering
+    take: poolSize,
   });
 
-  // Apply diversity filtering - don't show too many from same source
-  const MAX_PER_SOURCE = 2;
+  // Apply diversity filtering - don't overload from a single source
+  const MAX_PER_SOURCE = Math.max(2, Math.ceil(limit / 2));
   const sourceCount = new Map<string, number>();
-  const diverseResults: typeof bytes = [];
+  const diversePool: typeof bytes = [];
 
   for (const byte of bytes) {
-    if (diverseResults.length >= limit) break;
-
     const sourceId = byte.edition?.source?.id || 'unknown';
     const currentCount = sourceCount.get(sourceId) || 0;
-
-    if (currentCount >= MAX_PER_SOURCE) continue;
-
-    diverseResults.push(byte);
+    if (currentCount >= MAX_PER_SOURCE && diversePool.length >= limit) continue;
+    diversePool.push(byte);
     sourceCount.set(sourceId, currentCount + 1);
   }
 
-  // If we need more, add remaining bytes
-  if (diverseResults.length < limit) {
-    for (const byte of bytes) {
-      if (diverseResults.length >= limit) break;
-      if (!diverseResults.includes(byte)) {
-        diverseResults.push(byte);
-      }
-    }
+  const pool = diversePool.length >= limit ? diversePool : bytes;
+
+  // Fisher-Yates shuffle the pool, then take `limit`.
+  // The pool is already the top-quality subset, so randomizing within it
+  // keeps quality high while guaranteeing variety between calls.
+  const shuffled = [...pool];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
 
-  return diverseResults;
+  return shuffled.slice(0, limit);
 }
 
 async function getPopularFeed(
@@ -492,6 +508,7 @@ async function getPopularFeed(
   const bytes = await prisma.contentByte.findMany({
     where: {
       id: { notIn: excludeIds },
+      isHidden: false,
       moderationStatus: { not: 'rejected' }, // Don't show rejected content
     },
     include: {
@@ -525,6 +542,7 @@ async function getTrendingFeed(
   return prisma.contentByte.findMany({
     where: {
       id: { notIn: excludeIds },
+      isHidden: false,
       createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }, // Last 24h
       ...(cursor && { trendingScore: { lt: parseFloat(cursor) } }),
     },
@@ -558,6 +576,7 @@ async function getSubscribedFeed(
   return prisma.contentByte.findMany({
     where: {
       id: { notIn: excludeIds },
+      isHidden: false,
       edition: { sourceId: { in: sourceIds } },
       ...(cursor && { createdAt: { lt: new Date(cursor) } }),
     },
@@ -579,6 +598,7 @@ async function getNewFeed(
   return prisma.contentByte.findMany({
     where: {
       id: { notIn: excludeIds },
+      isHidden: false,
       ...(cursor && { createdAt: { lt: new Date(cursor) } }),
     },
     include: {
@@ -610,6 +630,7 @@ async function getPersonalizedFeed(
   const bytes = await prisma.contentByte.findMany({
     where: {
       id: { notIn: excludeIds },
+      isHidden: false,
       // Only show sponsored if user enabled recommendations
       ...(enableRecommendations ? {} : { isSponsored: false }),
     },
@@ -700,6 +721,7 @@ async function getPersonalizedFeed(
 async function getQueueSize(userId: string, seenByteIds: string[], sourceIds?: string[]): Promise<number> {
   const where: any = {
     id: { notIn: seenByteIds },
+    isHidden: false,
     moderationStatus: { not: 'rejected' },
   };
 
@@ -809,15 +831,27 @@ router.post('/recommend-newsletter', async (req: AuthenticatedRequest, res: Resp
     const { name, url } = req.body;
 
     // Validate input
-    if (!name || !url) {
+    if (!name || !url || typeof name !== 'string' || typeof url !== 'string') {
       return res.status(400).json({ error: 'Newsletter name and URL are required' });
     }
 
-    // Validate URL format
+    if (name.trim().length > 200) {
+      return res.status(400).json({ error: 'Newsletter name is too long (max 200 characters)' });
+    }
+    if (url.trim().length > 500) {
+      return res.status(400).json({ error: 'URL is too long (max 500 characters)' });
+    }
+
+    // Validate URL format AND protocol - only allow http/https
+    // (blocks javascript:, data:, etc. which would be a stored XSS vector)
+    let parsedUrl: URL;
     try {
-      new URL(url);
+      parsedUrl = new URL(url.trim());
     } catch {
       return res.status(400).json({ error: 'Please provide a valid URL' });
+    }
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      return res.status(400).json({ error: 'URL must start with http:// or https://' });
     }
 
     // Get user email

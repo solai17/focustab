@@ -2,7 +2,18 @@ import { Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { AuthenticatedRequest, JWTPayload } from '../types';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-change-me';
+const JWT_SECRET = process.env.JWT_SECRET || '';
+
+if (!JWT_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    // Never run production with a guessable signing key - anyone who knows
+    // the fallback could forge admin tokens
+    throw new Error('JWT_SECRET environment variable must be set in production');
+  }
+  console.warn('[Auth] WARNING: JWT_SECRET not set - using insecure dev-only fallback');
+}
+
+const SIGNING_SECRET = JWT_SECRET || 'dev-only-secret-do-not-use-in-production';
 
 export function authenticateToken(
   req: AuthenticatedRequest,
@@ -18,7 +29,7 @@ export function authenticateToken(
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
+    const decoded = jwt.verify(token, SIGNING_SECRET) as JWTPayload;
     req.userId = decoded.userId;
     next();
   } catch (error) {
@@ -28,5 +39,5 @@ export function authenticateToken(
 }
 
 export function generateToken(payload: JWTPayload): string {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' });
+  return jwt.sign(payload, SIGNING_SECRET, { expiresIn: '30d' });
 }

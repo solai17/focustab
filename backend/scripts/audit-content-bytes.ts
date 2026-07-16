@@ -230,16 +230,8 @@ async function runAudit() {
 
       if (result.score < MIN_QUALITY_SCORE) {
         toDelete.push(result.id);
-        // Mark as audited and then delete immediately
         if (!DRY_RUN) {
-          await prisma.contentByte.update({
-            where: { id: result.id },
-            data: {
-              qualityScore: result.score,
-              isAudited: true,
-            },
-          });
-          // Delete immediately instead of waiting until end
+          // Delete directly - no point updating a row we're about to remove
           await prisma.contentByte.delete({
             where: { id: result.id },
           });
@@ -251,17 +243,13 @@ async function runAudit() {
         kept++;
         // Update quality score and mark as audited
         if (!DRY_RUN) {
-          const updated_byte = await prisma.contentByte.update({
+          await prisma.contentByte.update({
             where: { id: result.id },
             data: {
               qualityScore: result.score,
               isAudited: true,
             },
           });
-          // Verify the update happened
-          if (updated_byte.qualityScore !== result.score) {
-            console.log(`  ⚠️ UPDATE FAILED for ${result.id}`);
-          }
         }
         updated++;
         if (result.score >= 0.85) {
@@ -296,6 +284,23 @@ async function runAudit() {
     } else {
       console.log(`\n✓ Already deleted ${toDelete.length} low-quality bytes during processing`);
     }
+  }
+
+  // Resync per-source insight counts after deletions so the extension's
+  // Sources screen and admin dashboard show accurate numbers
+  if (!DRY_RUN) {
+    console.log('\nSyncing source insight counts...');
+    const sources = await prisma.newsletterSource.findMany({ select: { id: true, name: true } });
+    for (const source of sources) {
+      const insightCount = await prisma.contentByte.count({
+        where: { edition: { sourceId: source.id }, isHidden: false },
+      });
+      await prisma.newsletterSource.update({
+        where: { id: source.id },
+        data: { totalInsights: insightCount },
+      });
+    }
+    console.log('✓ Source stats synced');
   }
 
   // Show score distribution

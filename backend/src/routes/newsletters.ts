@@ -152,6 +152,12 @@ router.post('/:id/subscribe', async (req: AuthenticatedRequest, res: Response) =
       return res.status(400).json({ error: 'Newsletter is not available for subscription' });
     }
 
+    // Check current state BEFORE upsert so we only count new activations
+    const existing = await prisma.userSubscription.findUnique({
+      where: { userId_sourceId: { userId, sourceId } },
+    });
+    const wasActive = existing?.isActive === true;
+
     // Create or reactivate subscription
     const subscription = await prisma.userSubscription.upsert({
       where: {
@@ -169,11 +175,14 @@ router.post('/:id/subscribe', async (req: AuthenticatedRequest, res: Response) =
       },
     });
 
-    // Update subscriber count
-    await prisma.newsletterSource.update({
-      where: { id: sourceId },
-      data: { subscriberCount: { increment: 1 } },
-    });
+    // Only increment when the subscription actually transitioned to active
+    // (repeat subscribe calls were inflating the count)
+    if (!wasActive) {
+      await prisma.newsletterSource.update({
+        where: { id: sourceId },
+        data: { subscriberCount: { increment: 1 } },
+      });
+    }
 
     res.json({
       success: true,
