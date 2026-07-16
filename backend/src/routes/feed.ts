@@ -471,31 +471,39 @@ async function getCuratedFeed(
     take: poolSize,
   });
 
-  // Apply diversity filtering - don't overload from a single source
-  const MAX_PER_SOURCE = Math.max(2, Math.ceil(limit / 2));
-  const sourceCount = new Map<string, number>();
-  const diversePool: typeof bytes = [];
-
-  for (const byte of bytes) {
-    const sourceId = byte.edition?.source?.id || 'unknown';
-    const currentCount = sourceCount.get(sourceId) || 0;
-    if (currentCount >= MAX_PER_SOURCE && diversePool.length >= limit) continue;
-    diversePool.push(byte);
-    sourceCount.set(sourceId, currentCount + 1);
-  }
-
-  const pool = diversePool.length >= limit ? diversePool : bytes;
-
-  // Fisher-Yates shuffle the pool, then take `limit`.
+  // Fisher-Yates shuffle the ENTIRE candidate pool first.
   // The pool is already the top-quality subset, so randomizing within it
   // keeps quality high while guaranteeing variety between calls.
-  const shuffled = [...pool];
+  const shuffled = [...bytes];
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
 
-  return shuffled.slice(0, limit);
+  // Apply source diversity to the SELECTION (not the pool) so a
+  // single-source library still gets the full pool's variety
+  const MAX_PER_SOURCE = Math.max(2, Math.ceil(limit / 2));
+  const sourceCount = new Map<string, number>();
+  const selected: typeof bytes = [];
+
+  for (const byte of shuffled) {
+    if (selected.length >= limit) break;
+    const sourceId = byte.edition?.source?.id || 'unknown';
+    const currentCount = sourceCount.get(sourceId) || 0;
+    if (currentCount >= MAX_PER_SOURCE) continue;
+    selected.push(byte);
+    sourceCount.set(sourceId, currentCount + 1);
+  }
+
+  // Backfill if the diversity constraint starved the result
+  if (selected.length < limit) {
+    for (const byte of shuffled) {
+      if (selected.length >= limit) break;
+      if (!selected.includes(byte)) selected.push(byte);
+    }
+  }
+
+  return selected;
 }
 
 async function getPopularFeed(

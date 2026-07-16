@@ -833,6 +833,7 @@
           authToken = data.token;
           currentUser = data.user;
           localStorage.setItem('admin_token', authToken);
+          localStorage.setItem('admin_email', data.user?.email || '');
           showDashboard();
         } else {
           showError(data.error || 'Authentication failed');
@@ -865,6 +866,7 @@
       authToken = null;
       currentUser = null;
       localStorage.removeItem('admin_token');
+      localStorage.removeItem('admin_email');
       document.getElementById('login-screen').style.display = 'flex';
       document.getElementById('dashboard').style.display = 'none';
     }
@@ -878,9 +880,9 @@
     function showDashboard() {
       document.getElementById('login-screen').style.display = 'none';
       document.getElementById('dashboard').style.display = 'block';
-      if (currentUser) {
-        document.getElementById('user-email').textContent = currentUser.email;
-      }
+      // Restore email from login response or localStorage (page reload case)
+      const email = currentUser?.email || localStorage.getItem('admin_email') || '';
+      document.getElementById('user-email').textContent = email;
       loadStats();
     }
 
@@ -1178,35 +1180,6 @@
       }
     }
 
-    async function loadForwarded() {
-      try {
-        const data = await apiCall('/admin/forwarded');
-        const tbody = document.getElementById('forwarded-table');
-
-        if (data.emails.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5" class="empty-state"><h3>No pending emails</h3><p>Forwarded emails will appear here for review</p></td></tr>';
-          return;
-        }
-
-        tbody.innerHTML = data.emails.map(email => `
-          <tr>
-            <td><strong>${escapeHtml(email.fromName || email.fromEmail)}</strong><br><small>${escapeHtml(email.fromEmail)}</small></td>
-            <td>${escapeHtml(email.subject)}</td>
-            <td>${new Date(email.receivedAt).toLocaleString()}</td>
-            <td><span class="badge ${getStatusBadge(email.status)}">${email.status}</span></td>
-            <td>
-              ${email.status === 'pending' ? `
-                <button class="btn btn-primary" onclick="reviewForwarded('${email.id}', 'approve')">Create Source</button>
-                <button class="btn btn-danger" onclick="reviewForwarded('${email.id}', 'reject')">Reject</button>
-              ` : ''}
-            </td>
-          </tr>
-        `).join('');
-      } catch (error) {
-        console.error('Failed to load forwarded:', error);
-      }
-    }
-
     async function loadScraping() {
       try {
         const data = await apiCall('/admin/scrape/jobs');
@@ -1359,97 +1332,6 @@
       }
     }
 
-    async function moderateInsight(id, action) {
-      try {
-        await apiCall(`/admin/insights/${id}/moderate`, {
-          method: 'POST',
-          body: JSON.stringify({ action }),
-        });
-        loadInsights();
-      } catch (error) {
-        alert('Failed to moderate insight');
-      }
-    }
-
-    function toggleSelectAll() {
-      const checked = document.getElementById('select-all-insights').checked;
-      document.querySelectorAll('.insight-checkbox').forEach(cb => cb.checked = checked);
-    }
-
-    async function bulkApprove() {
-      const ids = Array.from(document.querySelectorAll('.insight-checkbox:checked')).map(cb => cb.value);
-      if (ids.length === 0) {
-        alert('Select at least one insight');
-        return;
-      }
-
-      try {
-        await apiCall('/admin/insights/bulk-moderate', {
-          method: 'POST',
-          body: JSON.stringify({ ids, action: 'approve' }),
-        });
-        loadInsights();
-      } catch (error) {
-        alert('Failed to approve insights');
-      }
-    }
-
-    async function bulkReject() {
-      const ids = Array.from(document.querySelectorAll('.insight-checkbox:checked')).map(cb => cb.value);
-      if (ids.length === 0) {
-        alert('Select at least one insight');
-        return;
-      }
-
-      const reason = prompt('Rejection reason (optional):');
-
-      try {
-        await apiCall('/admin/insights/bulk-moderate', {
-          method: 'POST',
-          body: JSON.stringify({ ids, action: 'reject', reason }),
-        });
-        loadInsights();
-      } catch (error) {
-        alert('Failed to reject insights');
-      }
-    }
-
-    async function reviewForwarded(id, action) {
-      if (action === 'approve') {
-        const name = prompt('Newsletter name:');
-        const senderEmail = prompt('Sender email:');
-        const archiveUrl = prompt('Archive URL (optional):');
-
-        if (!name || !senderEmail) {
-          alert('Name and email required');
-          return;
-        }
-
-        try {
-          await apiCall(`/admin/forwarded/${id}/review`, {
-            method: 'POST',
-            body: JSON.stringify({
-              action: 'approve',
-              createSource: { name, senderEmail, archiveUrl: archiveUrl || undefined },
-            }),
-          });
-          loadForwarded();
-          loadSources();
-        } catch (error) {
-          alert('Failed to review email');
-        }
-      } else {
-        try {
-          await apiCall(`/admin/forwarded/${id}/review`, {
-            method: 'POST',
-            body: JSON.stringify({ action: 'reject' }),
-          });
-          loadForwarded();
-        } catch (error) {
-          alert('Failed to reject email');
-        }
-      }
-    }
-  </script>
+    </script>
 </body>
 </html>
