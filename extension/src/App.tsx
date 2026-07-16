@@ -5,6 +5,7 @@ const ByteLettersLogo = '/icons/icon128.png';
 import type { UserProfile, ContentByte, VoteValue } from './types';
 import {
   storage,
+  subscribeToKey,
   getUserProfile,
   saveUserProfile,
   calculateSundaysRemaining,
@@ -100,9 +101,40 @@ function App() {
   }, [currentByte]);
 
   // --- Value-streak helpers ---------------------------------------------
-  const applyStats = (stats: { bytesToday: number; bytesTotal: number }) => {
-    setByteStats({ today: stats.bytesToday, total: stats.bytesTotal });
-    void storage.set(STATS_STORAGE_KEY, { ...stats, date: new Date().toDateString() });
+  // chrome.storage is the SINGLE source of truth for the streak, so that
+  // any number of simultaneously open tabs show the same numbers and
+  // update live when any one of them reads a byte.
+
+  interface StoredStats { bytesToday: number; bytesTotal: number; date: string }
+
+  const normalizeStats = (s: StoredStats): { today: number; total: number } => ({
+    // A cache from a previous day contributes 0 to "today"
+    today: s.date === new Date().toDateString() ? s.bytesToday : 0,
+    total: s.bytesTotal,
+  });
+
+  // Every tab mirrors the shared stored value live
+  useEffect(() => {
+    const unsubscribe = subscribeToKey<StoredStats>(STATS_STORAGE_KEY, (value) => {
+      if (value) setByteStats(normalizeStats(value));
+    });
+    return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Increment the SHARED counter (read-modify-write on storage), so an
+  // increment from any tab reaches all tabs - and is never dropped just
+  // because this tab's server fetch hasn't finished yet
+  const bumpStreak = async () => {
+    const todayStr = new Date().toDateString();
+    const current = await storage.get<StoredStats>(STATS_STORAGE_KEY);
+    const next: StoredStats = {
+      bytesToday: (current && current.date === todayStr ? current.bytesToday : 0) + 1,
+      bytesTotal: (current?.bytesTotal ?? 0) + 1,
+      date: todayStr,
+    };
+    await storage.set(STATS_STORAGE_KEY, next); // onChanged updates every open tab
+    setByteStats(normalizeStats(next)); // immediate update for the web/dev fallback
   };
 
   // Celebrate a milestone at most once, on the first tab opened after crossing it
@@ -125,9 +157,20 @@ function App() {
 
   const refreshStats = () => {
     fetchByteStats()
-      .then((stats) => {
-        applyStats(stats);
-        void checkMilestone(stats.bytesTotal);
+      .then(async (server) => {
+        const todayStr = new Date().toDateString();
+        const current = await storage.get<StoredStats>(STATS_STORAGE_KEY);
+        const currentToday = current && current.date === todayStr ? current.bytesToday : 0;
+        // Merge with max(): the server may lag optimistic bumps that are
+        // still in flight - the counter must never visibly go backwards
+        const merged: StoredStats = {
+          bytesToday: Math.max(server.bytesToday, currentToday),
+          bytesTotal: Math.max(server.bytesTotal, current?.bytesTotal ?? 0),
+          date: todayStr,
+        };
+        await storage.set(STATS_STORAGE_KEY, merged);
+        setByteStats(normalizeStats(merged));
+        void checkMilestone(merged.bytesTotal);
       })
       .catch(() => {}); // Streak is decorative - never block the tab on it
   };
@@ -285,14 +328,16 @@ function App() {
         ]);
         recentIdsRef.current = Array.isArray(cachedRecent) ? cachedRecent : [];
 
-        // Show cached streak instantly; zero the "today" count if the cache
-        // is from a previous day (server refresh corrects it shortly after)
+        // Show the streak chip from the very first paint: cached numbers if
+        // we have them, zeros otherwise (server refresh corrects shortly)
         if (cachedStats) {
           const isToday = cachedStats.date === new Date().toDateString();
           setByteStats({
             today: isToday ? cachedStats.bytesToday : 0,
             total: cachedStats.bytesTotal,
           });
+        } else if (cachedProfile) {
+          setByteStats({ today: 0, total: 0 });
         }
 
         let renderedFromCache = false;
@@ -514,20 +559,12 @@ function App() {
 
   // Handle view tracking with read status
   const handleView = useCallback(async (byteId: string, dwellTimeMs: number, isRead: boolean) => {
-    // Optimistically bump the value streak the first time a byte is read
-    // this session (server is the source of truth on next refresh)
+    // Bump the SHARED streak counter the first time a byte is read this
+    // session - works even before this tab's stats fetch has finished,
+    // and propagates to every other open tab via storage.onChanged
     if (isRead && !usingMockData.current && !countedReadsRef.current.has(byteId)) {
       countedReadsRef.current.add(byteId);
-      setByteStats((prev) => {
-        if (!prev) return prev;
-        const next = { today: prev.today + 1, total: prev.total + 1 };
-        void storage.set(STATS_STORAGE_KEY, {
-          bytesToday: next.today,
-          bytesTotal: next.total,
-          date: new Date().toDateString(),
-        });
-        return next;
-      });
+      void bumpStreak();
     }
 
     // Only track views if using the API

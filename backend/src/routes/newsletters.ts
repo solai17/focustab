@@ -62,9 +62,24 @@ router.get('/', async (req: AuthenticatedRequest, res: Response) => {
 
     const subscribedIds = new Set(userSubscriptions.map((s) => s.sourceId));
 
+    // Compute insight counts LIVE - the denormalized totalInsights column
+    // is only synced by scripts and was showing 0 for every source
+    const insightCounts = await Promise.all(
+      sources.map((source) =>
+        prisma.contentByte.count({
+          where: {
+            edition: { sourceId: source.id },
+            isHidden: false,
+            moderationStatus: { not: 'rejected' },
+          },
+        })
+      )
+    );
+
     // Combine data
-    const newsletters = sources.map((source) => ({
+    const newsletters = sources.map((source, i) => ({
       ...source,
+      totalInsights: insightCounts[i],
       isSubscribed: subscribedIds.has(source.id),
     }));
 

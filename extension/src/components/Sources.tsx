@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
-import { X, Check, Loader2, Library, ExternalLink, Send, MessageSquarePlus } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { X, Check, Loader2, Library, ExternalLink, Send, Sparkles, RotateCw } from 'lucide-react';
+import { storage } from '../utils/storage';
 
 interface Newsletter {
   id: string;
@@ -31,11 +32,17 @@ const RECOMMEND_TAGS = [
 ];
 const MAX_TAGS = 3;
 
+// Cache the newsletter list so the modal renders instantly on open
+const SOURCES_CACHE_KEY = 'byteletters_sources_cache';
+
+const API_URL = import.meta.env.VITE_API_URL || 'https://api.byteletters.app';
+
 export function Sources({ onClose }: SourcesProps) {
   const [newsletters, setNewsletters] = useState<Newsletter[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [subscribing, setSubscribing] = useState<Set<string>>(new Set());
   const [showRecommendForm, setShowRecommendForm] = useState(false);
   const [recName, setRecName] = useState('');
@@ -58,46 +65,92 @@ export function Sources({ onClose }: SourcesProps) {
     );
   };
 
-  useEffect(() => {
-    loadNewsletters();
+  const applyData = useCallback((data: { newsletters: Newsletter[]; categories: Category[] }) => {
+    setNewsletters(data.newsletters);
+    setCategories([{ name: 'all', count: data.newsletters.length }, ...data.categories]);
   }, []);
 
-  const loadNewsletters = async () => {
-    try {
-      const { getStoredAuth } = await import('../services/auth');
-      const auth = await getStoredAuth();
-      if (!auth?.token) return;
+  // Fetch with retries - a cold backend (free-tier spin-up) was causing
+  // empty lists that only appeared after several manual refreshes
+  const loadNewsletters = useCallback(async () => {
+    setLoadFailed(false);
 
-      const API_URL = import.meta.env.VITE_API_URL || 'https://api.byteletters.app';
-      const response = await fetch(`${API_URL}/newsletters`, {
-        headers: { Authorization: `Bearer ${auth.token}` },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setNewsletters(data.newsletters);
-        setCategories([{ name: 'all', count: data.newsletters.length }, ...data.categories]);
-      }
-    } catch (error) {
-      console.error('Failed to load newsletters:', error);
-    } finally {
+    const { getStoredAuth } = await import('../services/auth');
+    const auth = await getStoredAuth();
+    if (!auth?.token) {
       setLoading(false);
+      setLoadFailed(true);
+      return;
     }
-  };
+
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const response = await fetch(`${API_URL}/newsletters`, {
+          headers: { Authorization: `Bearer ${auth.token}` },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          applyData(data);
+          setLoading(false);
+          // Cache for instant render next time
+          void storage.set(SOURCES_CACHE_KEY, {
+            newsletters: data.newsletters,
+            categories: data.categories,
+          });
+          return;
+        }
+      } catch {
+        // fall through to retry
+      }
+
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, attempt * 1500));
+      }
+    }
+
+    setLoading(false);
+    // Only surface the failure if we have nothing cached to show
+    setNewsletters((prev) => {
+      if (prev.length === 0) setLoadFailed(true);
+      return prev;
+    });
+  }, [applyData]);
+
+  useEffect(() => {
+    // Instant render from cache, then refresh from the server
+    (async () => {
+      const cached = await storage.get<{ newsletters: Newsletter[]; categories: Category[] }>(SOURCES_CACHE_KEY);
+      if (cached?.newsletters?.length) {
+        applyData(cached);
+        setLoading(false);
+      }
+      void loadNewsletters();
+    })();
+  }, [applyData, loadNewsletters]);
 
   const toggleSubscription = async (newsletter: Newsletter) => {
     if (subscribing.has(newsletter.id)) return;
 
     setSubscribing((prev) => new Set(prev).add(newsletter.id));
 
+    // Optimistic flip - the toggle responds instantly
+    const flip = (subscribed: boolean) =>
+      setNewsletters((prev) =>
+        prev.map((n) => (n.id === newsletter.id ? { ...n, isSubscribed: subscribed } : n))
+      );
+    flip(!newsletter.isSubscribed);
+
     try {
       const { getStoredAuth } = await import('../services/auth');
       const auth = await getStoredAuth();
-      if (!auth?.token) return;
+      if (!auth?.token) {
+        flip(newsletter.isSubscribed);
+        return;
+      }
 
-      const API_URL = import.meta.env.VITE_API_URL || 'https://api.byteletters.app';
       const endpoint = newsletter.isSubscribed ? 'unsubscribe' : 'subscribe';
-
       const response = await fetch(`${API_URL}/newsletters/${newsletter.id}/${endpoint}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${auth.token}` },
@@ -105,16 +158,12 @@ export function Sources({ onClose }: SourcesProps) {
 
       if (response.ok) {
         subscriptionsChangedRef.current = true;
-        setNewsletters((prev) =>
-          prev.map((n) =>
-            n.id === newsletter.id
-              ? { ...n, isSubscribed: !n.isSubscribed }
-              : n
-          )
-        );
+      } else {
+        flip(newsletter.isSubscribed); // revert on failure
       }
     } catch (error) {
       console.error('Failed to toggle subscription:', error);
+      flip(newsletter.isSubscribed); // revert on failure
     } finally {
       setSubscribing((prev) => {
         const next = new Set(prev);
@@ -138,7 +187,6 @@ export function Sources({ onClose }: SourcesProps) {
         return;
       }
 
-      const API_URL = import.meta.env.VITE_API_URL || 'https://api.byteletters.app';
       const response = await fetch(`${API_URL}/feed/recommend-newsletter`, {
         method: 'POST',
         headers: {
@@ -173,19 +221,6 @@ export function Sources({ onClose }: SourcesProps) {
 
   const subscribedCount = newsletters.filter((n) => n.isSubscribed).length;
 
-  const getCategoryColor = (category: string) => {
-    const colors: Record<string, string> = {
-      wisdom: 'bg-purple-500/20 text-purple-300',
-      productivity: 'bg-blue-500/20 text-blue-300',
-      business: 'bg-emerald-500/20 text-emerald-300',
-      tech: 'bg-cyan-500/20 text-cyan-300',
-      life: 'bg-rose-500/20 text-rose-300',
-      creativity: 'bg-amber-500/20 text-amber-300',
-      general: 'bg-slate-500/20 text-slate-300',
-    };
-    return colors[category] || colors.general;
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
@@ -195,138 +230,139 @@ export function Sources({ onClose }: SourcesProps) {
       />
 
       {/* Modal */}
-      <div className="relative bg-obsidian border border-ash rounded-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+      <div className="relative bg-obsidian border border-ash rounded-2xl w-full max-w-xl max-h-[85vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-ash">
-          <div className="flex items-center gap-3">
-            <Library className="w-6 h-6 text-life" />
+        <div className="flex items-start justify-between p-6 pb-5 border-b border-ash">
+          <div className="flex items-start gap-3">
+            <Library className="w-6 h-6 text-life mt-0.5" />
             <div>
               <h2 className="text-xl font-semibold text-pearl">Your Sources</h2>
-              <p className="text-sm text-smoke">
-                Choose which newsletters feed your new tabs &middot; {subscribedCount} of {newsletters.length} on
+              <p className="text-sm text-smoke mt-1 leading-relaxed">
+                Your new tabs show bytes only from newsletters that are switched on.
               </p>
             </div>
           </div>
           <button
             onClick={handleClose}
-            className="p-2 rounded-lg hover:bg-ash/50 text-smoke hover:text-pearl transition-colors"
+            className="p-2 rounded-lg hover:bg-ash/50 text-smoke hover:text-pearl transition-colors flex-shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Category Filter */}
-        <div className="flex gap-2 p-4 border-b border-ash overflow-x-auto">
+        <div className="flex items-center gap-2 px-6 py-3 border-b border-ash/60 overflow-x-auto">
           {categories.map((cat) => (
             <button
               key={cat.name}
               onClick={() => setSelectedCategory(cat.name)}
-              className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors ${
+              className={`px-3 py-1 rounded-full text-xs whitespace-nowrap transition-colors ${
                 selectedCategory === cat.name
                   ? 'bg-life text-void font-medium'
-                  : 'bg-slate hover:bg-ash text-smoke hover:text-pearl'
+                  : 'bg-slate/70 hover:bg-ash text-smoke hover:text-pearl'
               }`}
             >
               {cat.name === 'all' ? 'All' : cat.name.charAt(0).toUpperCase() + cat.name.slice(1)}
-              <span className="ml-1.5 opacity-70">({cat.count})</span>
             </button>
           ))}
+          <span className="ml-auto text-xs text-smoke/70 whitespace-nowrap pl-2">
+            {subscribedCount} of {newsletters.length} on
+          </span>
         </div>
 
         {/* Newsletter List */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto px-4 py-3">
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 text-life animate-spin" />
+            /* Skeleton rows instead of a spinner - feels faster */
+            <div className="space-y-2">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-slate/30 animate-pulse">
+                  <div className="w-9 h-9 rounded-lg bg-ash/60" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 w-36 rounded bg-ash/60" />
+                    <div className="h-2.5 w-24 rounded bg-ash/40" />
+                  </div>
+                  <div className="w-10 h-[22px] rounded-full bg-ash/50" />
+                </div>
+              ))}
+            </div>
+          ) : loadFailed ? (
+            <div className="text-center py-12">
+              <p className="text-smoke mb-1">Couldn't reach the server.</p>
+              <p className="text-smoke/60 text-sm mb-5">It may be waking up — this takes a few seconds.</p>
+              <button
+                onClick={() => { setLoading(true); void loadNewsletters(); }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-life text-void text-sm font-medium hover:bg-life/90 transition-colors"
+              >
+                <RotateCw className="w-4 h-4" />
+                Try again
+              </button>
             </div>
           ) : filteredNewsletters.length === 0 ? (
             <div className="text-center py-12 text-smoke">
-              <Library className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p>No newsletters found</p>
+              <Library className="w-10 h-10 mx-auto mb-3 opacity-40" />
+              <p>No newsletters in this topic yet</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-1.5">
               {filteredNewsletters.map((newsletter) => (
                 <div
                   key={newsletter.id}
-                  className={`flex items-center gap-4 p-4 rounded-xl border transition-colors ${
-                    newsletter.isSubscribed
-                      ? 'bg-life/5 border-life/30'
-                      : 'bg-slate/30 border-ash hover:border-smoke'
+                  className={`flex items-center gap-3 p-3 rounded-xl transition-colors ${
+                    newsletter.isSubscribed ? 'bg-life/[0.06]' : 'bg-transparent hover:bg-slate/40'
                   }`}
                 >
                   {/* Logo */}
-                  <div className="w-12 h-12 rounded-lg bg-ash flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  <div className="w-9 h-9 rounded-lg bg-ash/70 flex items-center justify-center flex-shrink-0 overflow-hidden">
                     {newsletter.logoUrl ? (
-                      <img
-                        src={newsletter.logoUrl}
-                        alt={newsletter.name}
-                        className="w-full h-full object-cover"
-                      />
+                      <img src={newsletter.logoUrl} alt="" className="w-full h-full object-cover" />
                     ) : (
-                      <span className="text-xl font-bold text-smoke">
-                        {newsletter.name.charAt(0)}
-                      </span>
+                      <span className="text-sm font-bold text-smoke">{newsletter.name.charAt(0)}</span>
                     )}
                   </div>
 
                   {/* Info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-medium text-pearl truncate">
-                        {newsletter.name}
-                      </h3>
-                      {newsletter.isVerified && (
-                        <span className="text-life text-xs">Verified</span>
-                      )}
-                    </div>
-                    {newsletter.description && (
-                      <p className="text-sm text-smoke truncate mt-0.5">
-                        {newsletter.description}
-                      </p>
-                    )}
-                    <div className="flex items-center gap-3 mt-1.5">
-                      <span className={`px-2 py-0.5 rounded-full text-xs ${getCategoryColor(newsletter.category)}`}>
-                        {newsletter.category}
-                      </span>
-                      <span className="text-xs text-smoke">
-                        {newsletter.totalInsights} insights
-                      </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium text-pearl text-sm truncate">{newsletter.name}</span>
+                      {newsletter.isVerified && <Check className="w-3.5 h-3.5 text-life flex-shrink-0" />}
                       {newsletter.website && (
                         <a
                           href={newsletter.website}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-xs text-smoke hover:text-life flex items-center gap-1"
+                          className="text-smoke/50 hover:text-life flex-shrink-0"
                           onClick={(e) => e.stopPropagation()}
+                          title={`Visit ${newsletter.name}`}
                         >
                           <ExternalLink className="w-3 h-3" />
-                          Website
                         </a>
                       )}
                     </div>
+                    <p className="text-xs text-smoke/80 mt-0.5 capitalize">
+                      {newsletter.category}
+                      {newsletter.totalInsights > 0 && (
+                        <span className="text-smoke/60"> · {newsletter.totalInsights.toLocaleString()} bytes</span>
+                      )}
+                    </p>
                   </div>
 
-                  {/* Toggle Button */}
+                  {/* Toggle switch */}
                   <button
                     onClick={() => toggleSubscription(newsletter)}
                     disabled={subscribing.has(newsletter.id)}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                      newsletter.isSubscribed
-                        ? 'bg-life/20 text-life hover:bg-rose/20 hover:text-rose'
-                        : 'bg-life text-void hover:bg-life/90'
-                    }`}
+                    role="switch"
+                    aria-checked={newsletter.isSubscribed}
+                    aria-label={`${newsletter.isSubscribed ? 'Turn off' : 'Turn on'} ${newsletter.name}`}
+                    className={`relative w-10 h-[22px] rounded-full flex-shrink-0 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-life/50 ${
+                      newsletter.isSubscribed ? 'bg-life' : 'bg-ash'
+                    } ${subscribing.has(newsletter.id) ? 'opacity-60' : ''}`}
                   >
-                    {subscribing.has(newsletter.id) ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : newsletter.isSubscribed ? (
-                      <>
-                        <Check className="w-4 h-4" />
-                        <span>Subscribed</span>
-                      </>
-                    ) : (
-                      <span>Subscribe</span>
-                    )}
+                    <span
+                      className={`absolute top-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                        newsletter.isSubscribed ? 'translate-x-[21px]' : 'translate-x-[3px]'
+                      }`}
+                    />
                   </button>
                 </div>
               ))}
@@ -334,15 +370,15 @@ export function Sources({ onClose }: SourcesProps) {
           )}
         </div>
 
-        {/* Footer - Recommend Newsletter (Prominent CTA) */}
-        <div className="p-4 border-t border-life/30 bg-gradient-to-r from-life/10 via-life/5 to-transparent">
+        {/* Footer - Recommend Newsletter (primary CTA) */}
+        <div className="p-4 border-t border-ash bg-slate/30">
           {!showRecommendForm ? (
             <button
               onClick={() => { setShowRecommendForm(true); setRecResult(null); }}
-              className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-life/20 hover:bg-life/30 border border-life/40 hover:border-life/60 text-life hover:text-white transition-all duration-200"
+              className="w-full flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl bg-life text-void font-semibold text-sm hover:bg-life/90 transition-colors"
             >
-              <MessageSquarePlus className="w-5 h-5" />
-              <span className="font-medium">Know a great newsletter? Recommend it!</span>
+              <Sparkles className="w-4 h-4" />
+              Missing your favorite newsletter? Recommend it
             </button>
           ) : (
             <div className="space-y-3">

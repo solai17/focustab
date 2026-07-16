@@ -6,12 +6,17 @@ const STORAGE_KEYS = {
 } as const;
 
 // Check if we're in Chrome extension context
+type StorageChange = { newValue?: unknown; oldValue?: unknown };
 declare const chrome: {
   storage: {
     local: {
       get: (keys: string[], callback: (result: Record<string, unknown>) => void) => void;
       set: (items: Record<string, unknown>, callback?: () => void) => void;
       remove: (keys: string[], callback?: () => void) => void;
+    };
+    onChanged?: {
+      addListener: (cb: (changes: Record<string, StorageChange>, area: string) => void) => void;
+      removeListener: (cb: (changes: Record<string, StorageChange>, area: string) => void) => void;
     };
   };
 } | undefined;
@@ -50,6 +55,34 @@ export const storage = {
     localStorage.removeItem(key);
   },
 };
+
+/**
+ * Subscribe to changes of a storage key across ALL open tabs.
+ * chrome.storage.onChanged fires in every context (including the writer),
+ * which makes storage the shared source of truth for things like the
+ * byte streak - every open new tab stays in sync live.
+ * Returns an unsubscribe function.
+ */
+export function subscribeToKey<T>(key: string, callback: (value: T | null) => void): () => void {
+  if (isExtension && chrome?.storage?.onChanged) {
+    const listener = (changes: Record<string, StorageChange>, area: string) => {
+      if (area === 'local' && key in changes) {
+        callback((changes[key].newValue as T) ?? null);
+      }
+    };
+    chrome.storage.onChanged.addListener(listener);
+    return () => chrome.storage.onChanged?.removeListener(listener);
+  }
+
+  // Web/dev fallback: the storage event (fires in other tabs only)
+  const listener = (e: StorageEvent) => {
+    if (e.key === key) {
+      callback(e.newValue ? (JSON.parse(e.newValue) as T) : null);
+    }
+  };
+  window.addEventListener('storage', listener);
+  return () => window.removeEventListener('storage', listener);
+}
 
 // User profile management
 export async function getUserProfile(): Promise<UserProfile | null> {
