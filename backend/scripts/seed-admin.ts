@@ -13,10 +13,12 @@ dotenv.config();
 
 const prisma = new PrismaClient();
 
-// Admin credentials - change these as needed
-const ADMIN_EMAIL = 's.solaiyappan17@gmail.com';
-const ADMIN_PASSWORD = 'Solai@5099';
-const ADMIN_NAME = 'Solaiyappan';
+// Admin credentials come from environment variables so the password
+// never lives in source control.
+//   ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=YourNewPassword npm run seed:admin
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 's.solaiyappan17@gmail.com';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const ADMIN_NAME = process.env.ADMIN_NAME || 'Solaiyappan';
 
 async function seedAdmin() {
   console.log('='.repeat(50));
@@ -24,6 +26,22 @@ async function seedAdmin() {
   console.log('='.repeat(50));
   console.log(`Email: ${ADMIN_EMAIL}`);
   console.log('');
+
+  if (!ADMIN_PASSWORD) {
+    console.error('ADMIN_PASSWORD environment variable is required.');
+    console.error('');
+    console.error('Run it like this:');
+    console.error('  ADMIN_PASSWORD=YourNewPassword npm run seed:admin');
+    console.error('');
+    console.error('(Pick a NEW password - do not reuse one that was previously');
+    console.error(' committed to the repository.)');
+    process.exit(1);
+  }
+
+  if (ADMIN_PASSWORD.length < 10) {
+    console.error('ADMIN_PASSWORD must be at least 10 characters.');
+    process.exit(1);
+  }
 
   try {
     // Hash password with high cost factor (12 rounds)

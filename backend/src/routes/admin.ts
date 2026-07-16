@@ -90,35 +90,21 @@ router.get('/stats', async (req: AuthenticatedRequest, res: Response) => {
       curatedSources,
       totalEditions,
       totalInsights,
-      pendingModeration,
-      rejectedInsights,
+      unauditedInsights,
+      hiddenInsights,
       downvotedInsights,
-      forwardedEmails,
-      recentScrapeJobs,
+      pendingRecommendations,
     ] = await Promise.all([
       prisma.user.count(),
       prisma.newsletterSource.count(),
       prisma.newsletterSource.count({ where: { isCurated: true } }),
       prisma.edition.count(),
       prisma.contentByte.count(),
-      prisma.contentByte.count({ where: { moderationStatus: 'pending' } }),
-      prisma.contentByte.count({ where: { moderationStatus: 'rejected' } }),
+      prisma.contentByte.count({ where: { isAudited: false } }),
+      prisma.contentByte.count({ where: { isHidden: true } }),
       prisma.contentByte.count({ where: { downvotes: { gte: 3 } } }),
-      prisma.forwardedEmail.count({ where: { status: 'pending' } }),
-      prisma.scrapeJob.findMany({
-        take: 5,
-        orderBy: { startedAt: 'desc' },
-        include: {
-          // Note: We'll need to handle this manually since we don't have relation
-        },
-      }),
+      prisma.newsletterRecommendation.count({ where: { status: 'pending' } }),
     ]);
-
-    // Get insights by moderation status
-    const moderationStats = await prisma.contentByte.groupBy({
-      by: ['moderationStatus'],
-      _count: { id: true },
-    });
 
     // Get processing queue stats
     const processingStats = await prisma.edition.groupBy({
@@ -135,15 +121,11 @@ router.get('/stats', async (req: AuthenticatedRequest, res: Response) => {
       editions: { total: totalEditions },
       insights: {
         total: totalInsights,
-        pendingModeration,
-        rejected: rejectedInsights,
+        unaudited: unauditedInsights,
+        hidden: hiddenInsights,
         downvoted: downvotedInsights,
-        byStatus: moderationStats.reduce((acc, s) => {
-          acc[s.moderationStatus] = s._count.id;
-          return acc;
-        }, {} as Record<string, number>),
       },
-      forwardedEmails: { pending: forwardedEmails },
+      recommendations: { pending: pendingRecommendations },
       processing: processingStats.reduce((acc, s) => {
         acc[s.processingStatus] = s._count.id;
         return acc;
@@ -319,11 +301,25 @@ router.get('/sources/:id', async (req: AuthenticatedRequest, res: Response) => {
 router.patch('/sources/:id', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const updates = req.body;
 
-    // Remove fields that shouldn't be directly updated
-    delete updates.id;
-    delete updates.createdAt;
+    // Whitelist updatable fields - prevents mass assignment of stats,
+    // verification flags, or other computed columns via crafted requests
+    const ALLOWED_FIELDS = [
+      'name', 'senderEmail', 'description', 'website', 'archiveUrl',
+      'category', 'logoUrl', 'isCurated', 'scrapingEnabled', 'scrapeFrequency',
+    ] as const;
+
+    const updates: Record<string, unknown> = {};
+    for (const field of ALLOWED_FIELDS) {
+      if (field in req.body) {
+        updates[field] = req.body[field];
+      }
+    }
+
+    // Keep senderDomain consistent when senderEmail changes
+    if (typeof updates.senderEmail === 'string' && updates.senderEmail.includes('@')) {
+      updates.senderDomain = (updates.senderEmail as string).split('@')[1];
+    }
 
     const source = await prisma.newsletterSource.update({
       where: { id },
@@ -334,7 +330,10 @@ router.patch('/sources/:id', async (req: AuthenticatedRequest, res: Response) =>
     });
 
     res.json({ source });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      return res.status(409).json({ error: 'Another source already uses that sender email' });
+    }
     console.error('[Admin] Update source error:', error);
     res.status(500).json({ error: 'Failed to update source' });
   }
@@ -853,18 +852,38 @@ router.post('/recommendations/:id/approve', async (req: AuthenticatedRequest, re
       return res.status(404).json({ error: 'Recommendation not found' });
     }
 
-    // Create a new source from the recommendation
-    const source = await prisma.newsletterSource.create({
-      data: {
-        name: recommendation.name,
-        website: recommendation.url,
-        senderEmail: `pending@${new URL(recommendation.url).hostname}`,
-        senderDomain: new URL(recommendation.url).hostname,
-        category,
-        isCurated: false, // Start as draft, admin can curate later
-        description: `Recommended by user`,
-      },
+    // Parse and validate the recommended URL (user-submitted data)
+    let hostname: string;
+    try {
+      const parsed = new URL(recommendation.url);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        return res.status(400).json({ error: 'Recommendation URL has an unsafe protocol' });
+      }
+      hostname = parsed.hostname;
+    } catch {
+      return res.status(400).json({ error: 'Recommendation has an invalid URL' });
+    }
+
+    // Reuse an existing source for this sender email instead of failing
+    // on the unique constraint (two recommendations for the same domain)
+    const senderEmail = `pending@${hostname}`;
+    let source = await prisma.newsletterSource.findUnique({
+      where: { senderEmail },
     });
+
+    if (!source) {
+      source = await prisma.newsletterSource.create({
+        data: {
+          name: recommendation.name,
+          website: recommendation.url,
+          senderEmail,
+          senderDomain: hostname,
+          category,
+          isCurated: false, // Start as draft, admin can curate later
+          description: 'Recommended by user',
+        },
+      });
+    }
 
     // Update the recommendation
     await prisma.newsletterRecommendation.update({

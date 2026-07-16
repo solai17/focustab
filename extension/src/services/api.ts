@@ -89,14 +89,20 @@ export async function isAuthenticated(): Promise<boolean> {
 
 /**
  * Get the next byte for new tab experience
+ * @param excludeIds - byte IDs the client already has (current byte, prefetch
+ *   queue, recently shown) so the server never returns a repeat
  */
-export async function fetchNextByte(): Promise<{
+export async function fetchNextByte(excludeIds: string[] = []): Promise<{
   byte: ContentByte | null;
   queueSize: number;
   hasUserSubscriptions: boolean;
   isCommunityContent: boolean;
 }> {
-  const response = await apiRequest<NextByteResponse>('/feed/next');
+  const exclude = excludeIds.slice(0, 100).join(',');
+  const endpoint = exclude
+    ? `/feed/next?exclude=${encodeURIComponent(exclude)}`
+    : '/feed/next';
+  const response = await apiRequest<NextByteResponse>(endpoint);
   return {
     byte: response.byte ? toContentByte(response.byte) : null,
     queueSize: response.queueSize,

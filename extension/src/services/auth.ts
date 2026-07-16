@@ -171,9 +171,17 @@ export async function clearAuth(): Promise<void> {
 }
 
 /**
- * Verify token is still valid with backend
+ * Verify token is still valid with backend.
+ * Distinguishes "server rejected the token" (invalid) from "couldn't reach
+ * the server" (network error / cold start) - the caller must NOT log the
+ * user out for a transient network failure.
  */
-export async function verifyToken(token: string): Promise<AuthUser | null> {
+export type TokenVerification =
+  | { status: 'valid'; user: AuthUser }
+  | { status: 'invalid' }
+  | { status: 'network-error' };
+
+export async function verifyToken(token: string): Promise<TokenVerification> {
   try {
     const response = await fetchWithTimeout(`${API_BASE_URL}/auth/me`, {
       headers: {
@@ -181,15 +189,20 @@ export async function verifyToken(token: string): Promise<AuthUser | null> {
       },
     });
 
+    if (response.status === 401 || response.status === 403) {
+      return { status: 'invalid' };
+    }
+
     if (!response.ok) {
-      return null;
+      // 5xx etc - server problem, not a bad token
+      return { status: 'network-error' };
     }
 
     const data = await response.json();
-    return data.user;
+    return { status: 'valid', user: data.user };
   } catch (error) {
-    console.error('Token verification failed:', error);
-    return null;
+    console.error('Token verification failed (network):', error);
+    return { status: 'network-error' };
   }
 }
 
@@ -266,17 +279,31 @@ export async function initializeAuth(): Promise<AuthState> {
 
     if (storedAuth) {
       // Verify token is still valid
-      const user = await verifyToken(storedAuth.token);
-      if (user) {
+      const verification = await verifyToken(storedAuth.token);
+
+      if (verification.status === 'valid') {
         return {
           isAuthenticated: true,
-          user,
+          user: verification.user,
           token: storedAuth.token,
           isLoading: false,
           error: null,
         };
       }
-      // Token invalid, clear it
+
+      if (verification.status === 'network-error') {
+        // Server unreachable (e.g. cold start) - KEEP the token and let the
+        // app run from local cache. Do not log the user out.
+        return {
+          isAuthenticated: false,
+          user: null,
+          token: storedAuth.token,
+          isLoading: false,
+          error: 'offline',
+        };
+      }
+
+      // Token genuinely rejected by the server - clear it
       await clearAuth();
     }
 
