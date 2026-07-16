@@ -354,6 +354,7 @@ model NewsletterRecommendation {
   // Newsletter info
   name            String    // Newsletter name provided by user
   url             String    // Newsletter URL/website
+  tags            String[]  @default([]) // User-suggested topics (wisdom, tech, ...)
 
   // Who recommended
   userId          String?   // User who recommended (null if submitted without login)

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X, Check, Loader2, Library, ExternalLink, Send, MessageSquarePlus } from 'lucide-react';
 
 interface Newsletter {
@@ -20,8 +20,16 @@ interface Category {
 }
 
 interface SourcesProps {
-  onClose: () => void;
+  /** Called on close; `subscriptionsChanged` tells the app to rebuild its byte queue */
+  onClose: (subscriptionsChanged: boolean) => void;
 }
+
+// Topics a user can attach to a newsletter recommendation (mirrors backend)
+const RECOMMEND_TAGS = [
+  'wisdom', 'productivity', 'business', 'tech', 'life',
+  'creativity', 'leadership', 'finance', 'health',
+];
+const MAX_TAGS = 3;
 
 export function Sources({ onClose }: SourcesProps) {
   const [newsletters, setNewsletters] = useState<Newsletter[]>([]);
@@ -32,8 +40,23 @@ export function Sources({ onClose }: SourcesProps) {
   const [showRecommendForm, setShowRecommendForm] = useState(false);
   const [recName, setRecName] = useState('');
   const [recUrl, setRecUrl] = useState('');
+  const [recTags, setRecTags] = useState<string[]>([]);
   const [recSubmitting, setRecSubmitting] = useState(false);
   const [recResult, setRecResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  // Tracks whether the user toggled any subscription this session
+  const subscriptionsChangedRef = useRef(false);
+
+  const handleClose = () => onClose(subscriptionsChangedRef.current);
+
+  const toggleTag = (tag: string) => {
+    setRecTags((prev) =>
+      prev.includes(tag)
+        ? prev.filter((t) => t !== tag)
+        : prev.length < MAX_TAGS
+          ? [...prev, tag]
+          : prev
+    );
+  };
 
   useEffect(() => {
     loadNewsletters();
@@ -81,6 +104,7 @@ export function Sources({ onClose }: SourcesProps) {
       });
 
       if (response.ok) {
+        subscriptionsChangedRef.current = true;
         setNewsletters((prev) =>
           prev.map((n) =>
             n.id === newsletter.id
@@ -121,15 +145,16 @@ export function Sources({ onClose }: SourcesProps) {
           Authorization: `Bearer ${auth.token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: recName.trim(), url: recUrl.trim() }),
+        body: JSON.stringify({ name: recName.trim(), url: recUrl.trim(), tags: recTags }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        setRecResult({ type: 'success', message: 'Thanks! We\'ll review your recommendation soon.' });
+        setRecResult({ type: 'success', message: 'Thanks! We\'ll review it and add it to the library soon.' });
         setRecName('');
         setRecUrl('');
+        setRecTags([]);
         setTimeout(() => setShowRecommendForm(false), 3000);
       } else {
         setRecResult({ type: 'error', message: data.error || 'Failed to submit recommendation.' });
@@ -166,7 +191,7 @@ export function Sources({ onClose }: SourcesProps) {
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-void/80 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={handleClose}
       />
 
       {/* Modal */}
@@ -176,14 +201,14 @@ export function Sources({ onClose }: SourcesProps) {
           <div className="flex items-center gap-3">
             <Library className="w-6 h-6 text-life" />
             <div>
-              <h2 className="text-xl font-semibold text-pearl">Newsletter Sources</h2>
+              <h2 className="text-xl font-semibold text-pearl">Your Sources</h2>
               <p className="text-sm text-smoke">
-                {subscribedCount} of {newsletters.length} subscribed
+                Choose which newsletters feed your new tabs &middot; {subscribedCount} of {newsletters.length} on
               </p>
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-2 rounded-lg hover:bg-ash/50 text-smoke hover:text-pearl transition-colors"
           >
             <X className="w-5 h-5" />
@@ -336,6 +361,35 @@ export function Sources({ onClose }: SourcesProps) {
                 placeholder="Newsletter URL (e.g., https://...)"
                 className="w-full px-3 py-2.5 bg-obsidian border border-ash rounded-lg text-pearl text-sm placeholder-smoke/50 focus:border-life focus:outline-none"
               />
+              {/* Topic tags */}
+              <div>
+                <p className="text-xs text-smoke mb-2">
+                  What's it about? <span className="opacity-60">(pick up to {MAX_TAGS})</span>
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {RECOMMEND_TAGS.map((tag) => {
+                    const selected = recTags.includes(tag);
+                    const disabled = !selected && recTags.length >= MAX_TAGS;
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => toggleTag(tag)}
+                        disabled={disabled}
+                        className={`px-2.5 py-1 rounded-full text-xs capitalize transition-colors ${
+                          selected
+                            ? 'bg-life text-void font-medium'
+                            : disabled
+                              ? 'bg-obsidian border border-ash text-smoke/40 cursor-not-allowed'
+                              : 'bg-obsidian border border-ash text-smoke hover:text-pearl hover:border-smoke'
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               {recResult && (
                 <p className={`text-xs ${recResult.type === 'success' ? 'text-life' : 'text-rose'}`}>
                   {recResult.message}

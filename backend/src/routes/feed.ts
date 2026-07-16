@@ -829,14 +829,21 @@ function formatByteResponse(byte: any, userId: string): ContentByteResponse {
 // NEWSLETTER RECOMMENDATIONS
 // =============================================================================
 
+// Topics users can attach to a newsletter recommendation
+const RECOMMENDATION_TAGS = [
+  'wisdom', 'productivity', 'business', 'tech', 'life',
+  'creativity', 'leadership', 'finance', 'health', 'general',
+];
+
 /**
  * POST /feed/recommend-newsletter
  * Submit a newsletter recommendation
+ * Body: { name: string, url: string, tags?: string[] }
  */
 router.post('/recommend-newsletter', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.userId!;
-    const { name, url } = req.body;
+    const { name, url, tags } = req.body;
 
     // Validate input
     if (!name || !url || typeof name !== 'string' || typeof url !== 'string') {
@@ -862,6 +869,19 @@ router.post('/recommend-newsletter', async (req: AuthenticatedRequest, res: Resp
       return res.status(400).json({ error: 'URL must start with http:// or https://' });
     }
 
+    // Validate tags: known values only, max 3
+    let cleanTags: string[] = [];
+    if (tags !== undefined) {
+      if (!Array.isArray(tags)) {
+        return res.status(400).json({ error: 'Tags must be an array' });
+      }
+      cleanTags = [...new Set(
+        tags.filter((t: unknown): t is string =>
+          typeof t === 'string' && RECOMMENDATION_TAGS.includes(t)
+        )
+      )].slice(0, 3);
+    }
+
     // Get user email
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -873,6 +893,7 @@ router.post('/recommend-newsletter', async (req: AuthenticatedRequest, res: Resp
       data: {
         name: name.trim(),
         url: url.trim(),
+        tags: cleanTags,
         userId,
         userEmail: user?.email,
       },

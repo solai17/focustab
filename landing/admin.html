@@ -643,13 +643,14 @@
               <tr>
                 <th>Newsletter Name</th>
                 <th>URL</th>
+                <th>Suggested Topics</th>
                 <th>Recommended By</th>
                 <th>Date</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="recommendations-table">
-              <tr><td colspan="5" class="empty-state">No recommendations yet</td></tr>
+              <tr><td colspan="6" class="empty-state">No recommendations yet</td></tr>
             </tbody>
           </table>
         </div>
@@ -1012,7 +1013,7 @@
         const tbody = document.getElementById('recommendations-table');
 
         if (!data.recommendations || data.recommendations.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No pending recommendations</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No pending recommendations</td></tr>';
           return;
         }
 
@@ -1023,10 +1024,14 @@
           const urlCell = isSafeUrl
             ? `<a href="${escapeHtml(rec.url)}" target="_blank" rel="noopener noreferrer" style="color: var(--life);">${escapeHtml(rec.url)}</a>`
             : escapeHtml(rec.url || '');
+          const tagsCell = (rec.tags || []).length > 0
+            ? rec.tags.map(t => `<span class="badge badge-info" style="margin-right: 4px;">${escapeHtml(t)}</span>`).join('')
+            : '<span style="color: var(--smoke);">-</span>';
           return `
           <tr>
             <td><strong>${escapeHtml(rec.name)}</strong></td>
             <td>${urlCell}</td>
+            <td>${tagsCell}</td>
             <td>${escapeHtml(rec.userEmail || 'Anonymous')}</td>
             <td>${new Date(rec.createdAt).toLocaleDateString()}</td>
             <td>
@@ -1041,13 +1046,13 @@
     }
 
     async function approveRecommendation(id) {
-      const category = prompt('Select category for this newsletter:', 'general');
+      const category = prompt('Category (leave blank to use the recommender\'s suggested topic):', '');
       if (category === null) return; // User cancelled
 
       try {
         await apiCall(`/admin/recommendations/${id}/approve`, {
           method: 'POST',
-          body: JSON.stringify({ category }),
+          body: JSON.stringify(category.trim() ? { category: category.trim() } : {}),
         });
         alert('Recommendation approved and added as a new source!');
         loadSources();

@@ -8,7 +8,6 @@ dotenv.config();
 
 // Import routes
 import authRoutes from './routes/auth';
-import webhookRoutes from './routes/webhooks';
 import feedRoutes from './routes/feed';
 import discoverRoutes from './routes/discover';
 import testFeedRoutes from './routes/testFeed';
@@ -59,7 +58,7 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Global rate limiting and validation (excludes webhooks for email reception)
+// Global rate limiting and validation
 app.use('/feed', rateLimits.feed);
 app.use('/discover', rateLimits.feed);
 app.use('/test-feed', rateLimits.general);
@@ -75,8 +74,9 @@ app.get('/health', (req, res) => {
 });
 
 // API Routes
+// NOTE: Email-forwarding webhooks removed in the curated-content pivot -
+// content now comes exclusively from scraping curated newsletter archives
 app.use('/auth', authRoutes);
-app.use('/webhooks', webhookRoutes);
 app.use('/feed', feedRoutes);           // Content feed with engagement
 app.use('/discover', discoverRoutes);   // Content discovery
 app.use('/newsletters', newslettersRoutes); // Curated newsletter sources
@@ -105,7 +105,6 @@ app.listen(PORT, () => {
   🔒 Health:   http://localhost:${PORT}/health
   💾 Database: ${dbMode}
 
-  📧 Webhook:  POST /webhooks/cloudflare, /webhooks/mailgun
   🔑 Auth:     POST /auth/signup, /auth/login
 
   📰 Feed:     GET  /feed, /feed/next

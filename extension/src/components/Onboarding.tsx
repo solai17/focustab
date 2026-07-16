@@ -208,7 +208,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
               </div>
               <p className="text-sm text-smoke/70">
                 Every new tab shows a bite-sized insight from newsletters like
-                Naval Ravikant, James Clear, Tim Ferriss, and more.
+                Naval Ravikant, James Clear, Farnam Street, and Sahil Bloom.
               </p>
             </div>
 
