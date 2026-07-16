@@ -25,8 +25,10 @@ import { prisma } from './db';
 // ---------------------------------------------------------------------------
 const MAX_LINKS_PER_PAGE = 60;     // Candidate article links per archive page
 const MAX_ARCHIVE_PAGES = 10;      // How deep to paginate per run
-const MAX_NEW_PER_RUN = 25;        // Stop after saving this many new editions
-const STOP_AFTER_CONSECUTIVE_KNOWN = 5; // Incremental cutoff
+const MAX_NEW_PER_RUN = parseInt(process.env.SCRAPE_MAX_NEW_PER_RUN || '25', 10);
+const STOP_AFTER_CONSECUTIVE_KNOWN = 5; // Incremental cutoff (normal mode)
+const MAX_AUTO_CONTINUES = 12;     // Cap-hit runs chain automatically up to this many times
+const AUTO_CONTINUE_DELAY_MS = parseInt(process.env.SCRAPE_CONTINUE_DELAY_MS || '30000', 10);
 const REQUEST_TIMEOUT_MS = 20000;
 const MIN_DELAY_MS = 1500;
 const MAX_DELAY_MS = 3500;
@@ -277,12 +279,24 @@ export function isSourceScraping(sourceId: string): boolean {
   return runningSources.has(sourceId);
 }
 
+export interface ScrapeOptions {
+  /** Deep scan: check EVERY archive page, ignoring the caught-up cutoff.
+   *  Use to backfill gaps when earlier coverage was patchy. */
+  deep?: boolean;
+  /** Internal: how many auto-continued runs preceded this one */
+  chainDepth?: number;
+}
+
 /**
  * Run a scrape job for one source. Designed to be fired asynchronously
  * (setImmediate) from a request handler - all progress lands on the
  * ScrapeJob row, never in the HTTP response.
+ *
+ * If the run ends because it hit the per-run cap of new editions, a
+ * follow-up job is scheduled automatically so large backlogs (e.g. a
+ * first-ever scrape of a big archive) drain without manual re-clicking.
  */
-export async function runScrapeJob(sourceId: string, jobId: string): Promise<void> {
+export async function runScrapeJob(sourceId: string, jobId: string, options: ScrapeOptions = {}): Promise<void> {
   if (runningSources.has(sourceId)) {
     await appendLog(jobId, 'Another scrape for this source is already running - aborted.');
     await prisma.scrapeJob.update({
@@ -293,9 +307,12 @@ export async function runScrapeJob(sourceId: string, jobId: string): Promise<voi
   }
   runningSources.add(sourceId);
 
+  const deep = options.deep === true;
+  const chainDepth = options.chainDepth ?? 0;
   let found = 0;
   let saved = 0;
   let skipped = 0;
+  let cappedByMaxNew = false;
 
   try {
     const source = await prisma.newsletterSource.findUnique({ where: { id: sourceId } });
@@ -303,7 +320,10 @@ export async function runScrapeJob(sourceId: string, jobId: string): Promise<voi
       throw new Error('Source not found or has no archive URL');
     }
 
-    await appendLog(jobId, `Scraping ${source.name} from ${source.archiveUrl}`);
+    await appendLog(
+      jobId,
+      `Scraping ${source.name} from ${source.archiveUrl}${deep ? ' (deep scan - checking every page)' : ''}${chainDepth > 0 ? ` (auto-continue #${chainDepth})` : ''}`
+    );
 
     let consecutiveKnown = 0;
     let stopped = false;
@@ -330,12 +350,12 @@ export async function runScrapeJob(sourceId: string, jobId: string): Promise<voi
 
       for (const url of pageLinks) {
         if (saved >= MAX_NEW_PER_RUN) {
-          await appendLog(jobId, `Reached per-run cap of ${MAX_NEW_PER_RUN} new editions - run again for more.`);
+          cappedByMaxNew = true;
           stopped = true;
           break;
         }
-        if (consecutiveKnown >= STOP_AFTER_CONSECUTIVE_KNOWN) {
-          await appendLog(jobId, `Hit ${STOP_AFTER_CONSECUTIVE_KNOWN} already-stored editions in a row - caught up.`);
+        if (!deep && consecutiveKnown >= STOP_AFTER_CONSECUTIVE_KNOWN) {
+          await appendLog(jobId, `Hit ${STOP_AFTER_CONSECUTIVE_KNOWN} already-stored editions in a row - caught up. (Use Deep scan to re-check every page.)`);
           stopped = true;
           break;
         }
@@ -425,8 +445,30 @@ export async function runScrapeJob(sourceId: string, jobId: string): Promise<voi
     });
     await appendLog(
       jobId,
-      `Done. ${saved} new, ${skipped} already stored. ${saved > 0 ? `${saved} editions queued for insight extraction.` : ''}`
+      `Done. ${saved} new, ${skipped} already stored. Library now holds ${editionCount} editions of ${source.name}.` +
+        (saved > 0 ? ` ${saved} queued for insight extraction.` : '')
     );
+
+    // Auto-continue: a cap-hit means more content remains - chain another
+    // incremental run so big backlogs drain without manual re-clicking
+    if (cappedByMaxNew) {
+      if (chainDepth < MAX_AUTO_CONTINUES) {
+        await appendLog(
+          jobId,
+          `Saved the per-run max of ${MAX_NEW_PER_RUN} new editions - more remain. Continuing automatically in ${Math.round(AUTO_CONTINUE_DELAY_MS / 1000)}s...`
+        );
+        setTimeout(() => {
+          prisma.scrapeJob
+            .create({ data: { sourceId, status: 'running', triggeredBy: 'auto-continue' } })
+            .then((nextJob: { id: string }) =>
+              runScrapeJob(sourceId, nextJob.id, { deep, chainDepth: chainDepth + 1 })
+            )
+            .catch((error: unknown) => console.error('[Scraper] Auto-continue failed:', error));
+        }, AUTO_CONTINUE_DELAY_MS);
+      } else {
+        await appendLog(jobId, `Reached the auto-continue limit (${MAX_AUTO_CONTINUES} chained runs). Click "Scrape now" to fetch the rest.`);
+      }
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     await appendLog(jobId, `FAILED: ${message}`);
