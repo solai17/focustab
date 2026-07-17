@@ -1,7 +1,7 @@
 {
   "name": "byteletters",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
   "description": "Your newsletters, distilled. Bite-sized wisdom in every new tab.",
   "scripts": {
