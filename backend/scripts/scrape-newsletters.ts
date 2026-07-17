@@ -15,9 +15,13 @@
  *   npm install puppeteer
  *
  * Usage:
- *   npm run scrape                    # Scrape all newsletters
+ *   npm run scrape                    # Incremental scrape of all newsletters
  *   npm run scrape -- james           # Scrape only James Clear
  *   npm run scrape -- farnam sahil    # Scrape Farnam Street and Sahil Bloom
+ *   npm run scrape -- james --deep    # Full scan (ignore the caught-up shortcut)
+ *
+ * Incremental by default: stops after hitting 5 already-stored editions
+ * in a row, so repeat runs only fetch what's new.
  */
 
 import axios from 'axios';
@@ -33,6 +37,11 @@ type Page = import('puppeteer').Page;
 const DELAY_BETWEEN_REQUESTS = 2000; // 2 seconds between requests
 const MAX_EDITIONS_PER_SOURCE = 1000; // High limit to get all editions (effectively no limit)
 const BROWSER_TIMEOUT = 60000; // 60 seconds for JS rendering
+// Incremental mode: stop after this many consecutive already-stored editions.
+// Archives list newest-first, so hitting N known editions in a row means
+// everything older is already in the database. Pass --deep to scan everything.
+const STOP_AFTER_CONSECUTIVE_KNOWN = 5;
+const DEEP_SCAN = process.argv.includes('--deep');
 
 // Global browser instance
 let browser: Browser | null = null;
@@ -67,6 +76,21 @@ function sleep(ms: number): Promise<void> {
 
 function generateContentHash(content: string): string {
   return crypto.createHash('sha256').update(content).digest('hex');
+}
+
+/**
+ * Check whether an edition is already stored (same hash saveEditions uses).
+ * Lets scrapers stop early instead of re-fetching the whole archive on
+ * repeat runs. Requires the page content, so the page fetch still happens
+ * for the first few known editions - then the run stops.
+ */
+async function isKnownEdition(url: string, content: string): Promise<boolean> {
+  const hash = generateContentHash(url + content.substring(0, 500));
+  const existing = await prisma.edition.findUnique({
+    where: { contentHash: hash },
+    select: { id: true },
+  });
+  return !!existing;
 }
 
 /**
@@ -266,7 +290,12 @@ async function scrapeJamesClear(config: NewsletterConfig): Promise<EditionData[]
 
   // Scrape each edition with browser
   const toScrape = links.slice(0, MAX_EDITIONS_PER_SOURCE);
+  let consecutiveKnown = 0;
   for (let i = 0; i < toScrape.length; i++) {
+    if (!DEEP_SCAN && consecutiveKnown >= STOP_AFTER_CONSECUTIVE_KNOWN) {
+      console.log(`[${config.name}] Hit ${STOP_AFTER_CONSECUTIVE_KNOWN} already-stored editions in a row - caught up. (Use --deep for a full scan.)`);
+      break;
+    }
     const { url, title } = toScrape[i];
     console.log(`[${config.name}] Scraping ${i + 1}/${toScrape.length}: ${title.substring(0, 50)}...`);
 
@@ -294,6 +323,12 @@ async function scrapeJamesClear(config: NewsletterConfig): Promise<EditionData[]
     }
 
     if (articleText.length > 200) {
+      if (await isKnownEdition(url, articleText)) {
+        consecutiveKnown++;
+        continue;
+      }
+      consecutiveKnown = 0;
+
       // Extract date
       const dateStr = page$('time').attr('datetime') ||
                      page$('meta[property="article:published_time"]').attr('content') ||
@@ -335,8 +370,10 @@ async function scrapeFarnamStreet(config: NewsletterConfig): Promise<EditionData
   // FS Blog has paginated archives
   let page = 1;
   const maxPages = 50;
+  let consecutiveKnown = 0;
+  let caughtUp = false;
 
-  while (page <= maxPages && editions.length < MAX_EDITIONS_PER_SOURCE) {
+  while (page <= maxPages && editions.length < MAX_EDITIONS_PER_SOURCE && !caughtUp) {
     const pageUrl = page === 1
       ? config.archiveUrl
       : `${config.archiveUrl}page/${page}/`;
@@ -376,6 +413,11 @@ async function scrapeFarnamStreet(config: NewsletterConfig): Promise<EditionData
     // Scrape each edition
     for (const { url, title } of links) {
       if (editions.length >= MAX_EDITIONS_PER_SOURCE) break;
+      if (!DEEP_SCAN && consecutiveKnown >= STOP_AFTER_CONSECUTIVE_KNOWN) {
+        console.log(`[${config.name}] Hit ${STOP_AFTER_CONSECUTIVE_KNOWN} already-stored editions in a row - caught up. (Use --deep for a full scan.)`);
+        caughtUp = true;
+        break;
+      }
 
       console.log(`[${config.name}] Scraping: ${title.substring(0, 50)}...`);
       await sleep(DELAY_BETWEEN_REQUESTS);
@@ -393,6 +435,11 @@ async function scrapeFarnamStreet(config: NewsletterConfig): Promise<EditionData
       const articleText = extractText(articleHtml);
 
       if (articleText.length > 200) {
+        if (await isKnownEdition(url, articleText)) {
+          consecutiveKnown++;
+          continue;
+        }
+        consecutiveKnown = 0;
         const dateStr = page$('time').attr('datetime') ||
                        page$('meta[property="article:published_time"]').attr('content');
 
@@ -514,7 +561,12 @@ async function scrapeSahilBloom(config: NewsletterConfig): Promise<EditionData[]
 
   // Scrape each edition
   const links = Array.from(seenUrls);
+  let consecutiveKnown = 0;
   for (let i = 0; i < links.length && editions.length < MAX_EDITIONS_PER_SOURCE; i++) {
+    if (!DEEP_SCAN && consecutiveKnown >= STOP_AFTER_CONSECUTIVE_KNOWN) {
+      console.log(`[${config.name}] Hit ${STOP_AFTER_CONSECUTIVE_KNOWN} already-stored editions in a row - caught up. (Use --deep for a full scan.)`);
+      break;
+    }
     const url = links[i];
     console.log(`[${config.name}] Scraping ${editions.length + 1}/${Math.min(links.length, MAX_EDITIONS_PER_SOURCE)}: ${url.split('/').pop()?.substring(0, 50)}...`);
 
@@ -537,6 +589,12 @@ async function scrapeSahilBloom(config: NewsletterConfig): Promise<EditionData[]
     const articleText = extractText(articleHtml);
 
     if (articleText.length > 200) {
+      if (await isKnownEdition(url, articleText)) {
+        consecutiveKnown++;
+        continue;
+      }
+      consecutiveKnown = 0;
+
       const dateStr = page$('time').attr('datetime') ||
                      page$('meta[property="article:published_time"]').attr('content');
 
@@ -632,9 +690,14 @@ async function scrapeNaval(config: NewsletterConfig): Promise<EditionData[]> {
 
   // Scrape each edition
   let skippedOld = 0;
+  let consecutiveKnown = 0;
   const toScrape = links.slice(0, MAX_EDITIONS_PER_SOURCE);
 
   for (let i = 0; i < toScrape.length; i++) {
+    if (!DEEP_SCAN && consecutiveKnown >= STOP_AFTER_CONSECUTIVE_KNOWN) {
+      console.log(`[${config.name}] Hit ${STOP_AFTER_CONSECUTIVE_KNOWN} already-stored editions in a row - caught up. (Use --deep for a full scan.)`);
+      break;
+    }
     const { url, title } = toScrape[i];
     console.log(`[${config.name}] Scraping ${i + 1}/${toScrape.length}: ${title.substring(0, 50)}...`);
 
@@ -700,6 +763,12 @@ async function scrapeNaval(config: NewsletterConfig): Promise<EditionData[]> {
                      title;
 
     if (articleText.length > 200) {
+      if (await isKnownEdition(url, articleText)) {
+        consecutiveKnown++;
+        continue;
+      }
+      consecutiveKnown = 0;
+
       editions.push({
         subject: cleanTitle(pageTitle),
         url,
