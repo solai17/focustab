@@ -14,6 +14,7 @@ import testFeedRoutes from './routes/testFeed';
 import internalRoutes from './routes/internal';
 import adminRoutes from './routes/admin';
 import newslettersRoutes from './routes/newsletters';
+import publicRoutes from './routes/public';
 import { isMockDb } from './services/db';
 import { startScrapeScheduler } from './services/scrapeScheduler';
 import { securityHeaders, validateRequest, rateLimits, requestLogger } from './middleware/security';
@@ -84,6 +85,7 @@ app.use('/newsletters', newslettersRoutes); // Curated newsletter sources
 app.use('/test-feed', testFeedRoutes);  // Test routes (no auth, works with mock db)
 app.use('/internal', internalRoutes);   // Cron/admin endpoints (protected)
 app.use('/admin', adminRoutes);         // Admin dashboard endpoints
+app.use('/public', rateLimits.general, publicRoutes); // Unauthenticated landing-page endpoints
 
 // 404 handler
 app.use((req, res) => {

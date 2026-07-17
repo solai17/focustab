@@ -7,7 +7,7 @@
 // Configuration
 // =============================================================================
 
-const API_BASE_URL = 'https://byteletters-api.onrender.com'; // Production API
+const API_BASE_URL = 'https://api.byteletters.app'; // Production API
 const FALLBACK_API_URL = 'http://localhost:3000'; // Local dev
 const COOKIE_CONSENT_KEY = 'byteletters_cookie_consent';
 const BYTE_ROTATE_INTERVAL = 20000; // 20 seconds
@@ -107,19 +107,19 @@ const modalCloseBtn = document.getElementById('modal-close');
 // =============================================================================
 
 /**
- * Fetch bytes from the API
+ * Fetch the library's best-performing bytes from the API
  */
 async function fetchBytes() {
   try {
     // Try production API first
-    let response = await fetch(`${API_BASE_URL}/test-feed?limit=20`, {
+    let response = await fetch(`${API_BASE_URL}/public/showcase`, {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
     });
 
     // If production fails, try localhost (for development)
     if (!response.ok) {
-      response = await fetch(`${FALLBACK_API_URL}/test-feed?limit=20`, {
+      response = await fetch(`${FALLBACK_API_URL}/public/showcase`, {
         method: 'GET',
         headers: { 'Accept': 'application/json' },
       });
@@ -129,8 +129,8 @@ async function fetchBytes() {
       const data = await response.json();
       if (data.bytes && data.bytes.length > 0) {
         bytes = data.bytes;
-        shuffleArray(bytes);
-        console.log(`[ByteLetters] Loaded ${bytes.length} bytes from API`);
+        dailyShuffle(bytes);
+        console.log(`[ByteLetters] Loaded ${bytes.length} top bytes from the library`);
       }
     }
   } catch (error) {
@@ -139,11 +139,22 @@ async function fetchBytes() {
 }
 
 /**
- * Shuffle array in place
+ * Shuffle deterministically, seeded by today's date - every visitor sees
+ * the same fresh rotation for the day, and it changes tomorrow.
  */
-function shuffleArray(array) {
+function dailyShuffle(array) {
+  const daySeed = Math.floor(Date.now() / 86400000); // days since epoch
+  let state = daySeed >>> 0;
+  const random = () => {
+    // mulberry32 PRNG - deterministic for a given day
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
   for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(random() * (i + 1));
     [array[i], array[j]] = [array[j], array[i]];
   }
 }
@@ -229,8 +240,8 @@ async function initBytePreview() {
   // Then fetch from API in background
   await fetchBytes();
 
-  // Display a random byte from the fetched set
-  currentByteIndex = Math.floor(Math.random() * bytes.length);
+  // Show today's rotation from the top
+  currentByteIndex = 0;
   displayByte(bytes[currentByteIndex], false);
 }
 
