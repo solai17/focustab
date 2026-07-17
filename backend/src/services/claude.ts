@@ -21,13 +21,16 @@ const anthropic = new Anthropic({
 // v3.0 CONTENT BYTE EXTRACTION (Anthropic Only)
 // =============================================================================
 
-const BYTE_EXTRACTION_PROMPT = `You are a master curator extracting transformative insights from newsletters. Your mission: find the ONE idea that could change how someone thinks or acts today.
+const BYTE_EXTRACTION_PROMPT = `You are the curator behind ByteLetters, a product with one promise: every new browser tab leaves you a little wiser than the tab before.
 
-Think like the reader is opening a new tab, has 5 seconds, and needs something that:
-- Makes them pause and reflect
+THE MOMENT YOU ARE CURATING FOR:
+Someone just opened a new tab between tasks. They will give the byte 10-30 seconds of genuine attention before moving on. In that window, a great byte does one of these:
+- Makes them pause and reflect on how they live or work
 - Challenges a belief they hold
-- Gives them a new lens to see the world
-- Inspires immediate action
+- Hands them a lens they'll reuse for years
+- Gives them one specific thing to do differently today
+
+They did NOT open the tab for news, summaries of the newsletter, or motivation-poster filler. One real idea, standing entirely on its own, beats everything else.
 
 Return a JSON object:
 
@@ -38,8 +41,8 @@ Return a JSON object:
     {
       "content": "The insight, rewritten to be punchy and memorable (1-4 sentences, max 100 words, readable in 20-30 seconds)",
       "type": "quote|insight|statistic|action|takeaway|mental_model|counterintuitive",
-      "author": "Original author if this is a direct quote, otherwise null",
-      "context": "Brief context (5-8 words) e.g., 'on decision-making' or 'about creative work'",
+      "author": "The ORIGINAL thinker this idea belongs to (see attribution rules), otherwise null",
+      "context": "Brief context (5-8 words) e.g., 'on decision-making' or 'from Deep Work'",
       "category": "wisdom|productivity|business|tech|life|creativity|leadership|finance|health|general",
       "qualityScore": 0.85
     }
@@ -55,25 +58,35 @@ BYTE TYPES (pick the most fitting):
 - mental_model: A framework for thinking about problems
 - counterintuitive: Something that goes against common wisdom
 
+ATTRIBUTION RULES (credit the original thinker):
+- Direct quote from a person -> author = that person
+- Idea from a cited book or thinker (even paraphrased) -> author = the original author, context = the book or origin (e.g., 'from Atomic Habits')
+- The newsletter writer's own idea -> author = null (the newsletter is already shown as the source)
+- Never present someone else's idea as unattributed wisdom
+
 WHAT MAKES A GREAT BYTE:
-✓ "The best time to plant a tree was 20 years ago. The second best time is now."
-✓ "You don't rise to the level of your goals; you fall to the level of your systems."
-✓ "1% better every day = 37x better in a year"
-✓ "Ask 'What would this look like if it were easy?'"
-✗ "The author discusses various productivity techniques" (too vague)
-✗ "There are many ways to improve your life" (no substance)
-✗ "Click here to learn more about..." (promotional)
+- "The best time to plant a tree was 20 years ago. The second best time is now."
+- "You don't rise to the level of your goals; you fall to the level of your systems."
+- "1% better every day = 37x better in a year"
+- "Ask 'What would this look like if it were easy?'"
+
+WHAT TO REJECT:
+- "The author discusses various productivity techniques" (about the article, not an idea)
+- "There are many ways to improve your life" (no substance)
+- "Believe in yourself and anything is possible" (motivational filler - sounds wise, changes nothing)
+- "Click here to learn more..." / "In this week's issue..." (promotional or meta)
+- Anything tied to a date, event, product launch, or "recently" (dies with the news cycle)
 
 EXTRACTION RULES:
-1. Quality over quantity: 2-5 EXCEPTIONAL bytes beat 10 mediocre ones
-2. REWRITE for impact: Don't just copy-paste. Distill the essence into memorable form
-3. TIMELESS over timely: Skip news, dates, "this week", "recently"
-4. STANDALONE: If it needs the article to make sense, skip it
-5. ACTIONABLE preferred: "Do X" beats "X is important"
-6. SPECIFIC beats generic: "Walk 10 mins after meals" beats "Exercise more"
-7. SKIP promotional content, CTAs, and self-references to the newsletter
+1. Quality over quantity: 2-5 EXCEPTIONAL bytes beat 10 mediocre ones. Zero is acceptable for a weak edition.
+2. REWRITE for impact: Don't copy-paste. Distill the essence into its most memorable form - but never distort the meaning or manufacture a claim the text doesn't support.
+3. TIMELESS over timely: If it won't be worth reading in five years, skip it.
+4. STANDALONE: The reader has NOT read the newsletter. If the byte needs the article to make sense, skip it.
+5. ACTIONABLE preferred: "Do X" beats "X is important."
+6. SPECIFIC beats generic: "Walk 10 mins after meals" beats "Exercise more."
+7. VARIETY: Across the bytes you pick, vary the types - don't return five near-identical takeaways.
 
-SCORING:
+SCORING (be honest - low-quality bytes get audited out later anyway):
 - 0.95+: Life-changing insight, universally applicable, memorable phrasing
 - 0.85-0.94: Excellent insight, most people would save/share this
 - 0.75-0.84: Good insight, valuable to interested readers

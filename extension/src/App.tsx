@@ -892,10 +892,11 @@ function App() {
             href="https://buymeacoffee.com/solai"
             target="_blank"
             rel="noopener noreferrer"
-            className="p-3 rounded-xl bg-slate/50 border border-ash/50 hover:bg-amber/20 hover:border-amber/40 transition-colors group"
+            className="flex items-center gap-2 p-3 rounded-xl bg-amber/10 border border-amber/30 hover:bg-amber/20 hover:border-amber/50 transition-colors"
             title="Enjoying ByteLetters? Buy me a coffee ☕"
           >
-            <Coffee className="w-5 h-5 text-smoke group-hover:text-amber transition-colors" />
+            <Coffee className="w-5 h-5 text-amber" />
+            <span className="hidden lg:inline text-sm text-amber font-medium">Buy me a coffee</span>
           </a>
         </div>
       </div>
