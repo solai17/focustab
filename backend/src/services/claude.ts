@@ -92,12 +92,13 @@ export async function processEditionWithClaude(
   extractSourceInfo: boolean = false
 ): Promise<ProcessedEditionWithSourceInfo> {
   try {
-    console.log(`[AI] Using Claude Sonnet 4 for: ${sourceName}`);
+    console.log(`[AI] Using Claude Sonnet 5 for: ${sourceName}`);
     const truncatedContent = textContent.slice(0, 20000);
 
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2048,
+      model: 'claude-sonnet-5',
+      max_tokens: 3072, // headroom for Sonnet 5's tokenizer (~30% more tokens)
+      thinking: { type: 'disabled' }, // content[0] must be the text block
       messages: [
         {
           role: 'user',
@@ -134,7 +135,7 @@ ${truncatedContent}`,
       readTimeMinutes:
         parsed.readTimeMinutes || Math.ceil(textContent.split(/\s+/).length / 200),
       bytes: validBytes,
-      modelUsed: 'claude-sonnet-4',
+      modelUsed: 'claude-sonnet-5',
     };
   } catch (error) {
     console.error('Error processing edition with Claude:', error);
@@ -185,8 +186,9 @@ export async function categorizeNewsletterSource(
 ): Promise<{ description: string; category: ByteCategory; tags: string[] }> {
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 256,
+      model: 'claude-sonnet-5',
+      max_tokens: 384, // headroom for Sonnet 5's tokenizer
+      thinking: { type: 'disabled' }, // content[0] must be the text block
       messages: [
         {
           role: 'user',
@@ -225,8 +227,9 @@ ${sampleContent.slice(0, 2000)}`,
 export async function testClaudeConnection(): Promise<boolean> {
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 10,
+      model: 'claude-sonnet-5',
+      max_tokens: 16,
+      thinking: { type: 'disabled' }, // single-word answer, no thinking spend
       messages: [{ role: 'user', content: 'Say "ok"' }],
     });
     return message.content.length > 0;
@@ -242,8 +245,9 @@ export async function testClaudeConnection(): Promise<boolean> {
 export async function assessContentQuality(content: string): Promise<number> {
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 10,
+      model: 'claude-sonnet-5',
+      max_tokens: 16,
+      thinking: { type: 'disabled' }, // single-word answer, no thinking spend
       messages: [
         {
           role: 'user',

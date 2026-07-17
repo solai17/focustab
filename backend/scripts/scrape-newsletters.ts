@@ -15,9 +15,13 @@
  *   npm install puppeteer
  *
  * Usage:
- *   npm run scrape                    # Scrape all newsletters
+ *   npm run scrape                    # Incremental scrape of all newsletters
  *   npm run scrape -- james           # Scrape only James Clear
  *   npm run scrape -- farnam sahil    # Scrape Farnam Street and Sahil Bloom
+ *   npm run scrape -- james --deep    # Full scan (ignore the caught-up shortcut)
+ *
+ * Incremental by default: stops after hitting 5 already-stored editions
+ * in a row, so repeat runs only fetch what's new.
  */
 
 import axios from 'axios';
@@ -33,6 +37,11 @@ type Page = import('puppeteer').Page;
 const DELAY_BETWEEN_REQUESTS = 2000; // 2 seconds between requests
 const MAX_EDITIONS_PER_SOURCE = 1000; // High limit to get all editions (effectively no limit)
 const BROWSER_TIMEOUT = 60000; // 60 seconds for JS rendering
+// Incremental mode: stop after this many consecutive already-stored editions.
+// Archives list newest-first, so hitting N known editions in a row means
+// everything older is already in the database. Pass --deep to scan everything.
+const STOP_AFTER_CONSECUTIVE_KNOWN = 5;
+const DEEP_SCAN = process.argv.includes('--deep');
 
 // Global browser instance
 let browser: Browser | null = null;
@@ -67,6 +76,21 @@ function sleep(ms: number): Promise<void> {
 
 function generateContentHash(content: string): string {
   return crypto.createHash('sha256').update(content).digest('hex');
+}
+
+/**
+ * Check whether an edition is already stored (same hash saveEditions uses).
+ * Lets scrapers stop early instead of re-fetching the whole archive on
+ * repeat runs. Requires the page content, so the page fetch still happens
+ * for the first few known editions - then the run stops.
+ */
+async function isKnownEdition(url: string, content: string): Promise<boolean> {
+  const hash = generateContentHash(url + content.substring(0, 500));
+  const existing = await prisma.edition.findUnique({
+    where: { contentHash: hash },
+    select: { id: true },
+  });
+  return !!existing;
 }
 
 /**
@@ -266,7 +290,12 @@ async function scrapeJamesClear(config: NewsletterConfig): Promise<EditionData[]
 
   // Scrape each edition with browser
   const toScrape = links.slice(0, MAX_EDITIONS_PER_SOURCE);
+  let consecutiveKnown = 0;
   for (let i = 0; i < toScrape.length; i++) {
+    if (!DEEP_SCAN && consecutiveKnown >= STOP_AFTER_CONSECUTIVE_KNOWN) {
+      console.log(`[${config.name}] Hit ${STOP_AFTER_CONSECUTIVE_KNOWN} already-stored editions in a row - caught up. (Use --deep for a full scan.)`);
+      break;
+    }
     const { url, title } = toScrape[i];
     console.log(`[${config.name}] Scraping ${i + 1}/${toScrape.length}: ${title.substring(0, 50)}...`);
 
@@ -294,6 +323,12 @@ async function scrapeJamesClear(config: NewsletterConfig): Promise<EditionData[]
     }
 
     if (articleText.length > 200) {
+      if (await isKnownEdition(url, articleText)) {
+        consecutiveKnown++;
+        continue;
+      }
+      consecutiveKnown = 0;
+
       // Extract date
       const dateStr = page$('time').attr('datetime') ||
                      page$('meta[property="article:published_time"]').attr('content') ||
@@ -335,8 +370,10 @@ async function scrapeFarnamStreet(config: NewsletterConfig): Promise<EditionData
   // FS Blog has paginated archives
   let page = 1;
   const maxPages = 50;
+  let consecutiveKnown = 0;
+  let caughtUp = false;
 
-  while (page <= maxPages && editions.length < MAX_EDITIONS_PER_SOURCE) {
+  while (page <= maxPages && editions.length < MAX_EDITIONS_PER_SOURCE && !caughtUp) {
     const pageUrl = page === 1
       ? config.archiveUrl
       : `${config.archiveUrl}page/${page}/`;
@@ -376,6 +413,11 @@ async function scrapeFarnamStreet(config: NewsletterConfig): Promise<EditionData
     // Scrape each edition
     for (const { url, title } of links) {
       if (editions.length >= MAX_EDITIONS_PER_SOURCE) break;
+      if (!DEEP_SCAN && consecutiveKnown >= STOP_AFTER_CONSECUTIVE_KNOWN) {
+        console.log(`[${config.name}] Hit ${STOP_AFTER_CONSECUTIVE_KNOWN} already-stored editions in a row - caught up. (Use --deep for a full scan.)`);
+        caughtUp = true;
+        break;
+      }
 
       console.log(`[${config.name}] Scraping: ${title.substring(0, 50)}...`);
       await sleep(DELAY_BETWEEN_REQUESTS);
@@ -393,6 +435,11 @@ async function scrapeFarnamStreet(config: NewsletterConfig): Promise<EditionData
       const articleText = extractText(articleHtml);
 
       if (articleText.length > 200) {
+        if (await isKnownEdition(url, articleText)) {
+          consecutiveKnown++;
+          continue;
+        }
+        consecutiveKnown = 0;
         const dateStr = page$('time').attr('datetime') ||
                        page$('meta[property="article:published_time"]').attr('content');
 
@@ -514,7 +561,12 @@ async function scrapeSahilBloom(config: NewsletterConfig): Promise<EditionData[]
 
   // Scrape each edition
   const links = Array.from(seenUrls);
+  let consecutiveKnown = 0;
   for (let i = 0; i < links.length && editions.length < MAX_EDITIONS_PER_SOURCE; i++) {
+    if (!DEEP_SCAN && consecutiveKnown >= STOP_AFTER_CONSECUTIVE_KNOWN) {
+      console.log(`[${config.name}] Hit ${STOP_AFTER_CONSECUTIVE_KNOWN} already-stored editions in a row - caught up. (Use --deep for a full scan.)`);
+      break;
+    }
     const url = links[i];
     console.log(`[${config.name}] Scraping ${editions.length + 1}/${Math.min(links.length, MAX_EDITIONS_PER_SOURCE)}: ${url.split('/').pop()?.substring(0, 50)}...`);
 
@@ -537,6 +589,12 @@ async function scrapeSahilBloom(config: NewsletterConfig): Promise<EditionData[]
     const articleText = extractText(articleHtml);
 
     if (articleText.length > 200) {
+      if (await isKnownEdition(url, articleText)) {
+        consecutiveKnown++;
+        continue;
+      }
+      consecutiveKnown = 0;
+
       const dateStr = page$('time').attr('datetime') ||
                      page$('meta[property="article:published_time"]').attr('content');
 
@@ -559,127 +617,6 @@ async function scrapeSahilBloom(config: NewsletterConfig): Promise<EditionData[]
   }
 
   console.log(`[${config.name}] Scraped ${editions.length} editions`);
-  return editions;
-}
-
-// =============================================================================
-// ALEX AND BOOKS SCRAPER (BEEHIIV - Uses Puppeteer)
-// =============================================================================
-
-async function scrapeAlexAndBooks(config: NewsletterConfig): Promise<EditionData[]> {
-  console.log(`\n[${config.name}] Starting scrape with headless browser...`);
-  const editions: EditionData[] = [];
-  const seenUrls = new Set<string>();
-
-  // Beehiiv archives also benefit from JS rendering
-  const archiveUrls = [
-    `${config.archiveUrl}/archive`,
-    config.archiveUrl,
-  ];
-
-  for (const archiveUrl of archiveUrls) {
-    if (editions.length >= MAX_EDITIONS_PER_SOURCE) break;
-
-    console.log(`[${config.name}] Trying archive: ${archiveUrl}`);
-
-    // Try with browser first
-    let archiveHtml = await fetchPageWithBrowser(archiveUrl, 'a[href*="/p/"]');
-
-    // Fallback to axios if browser fails
-    if (!archiveHtml) {
-      archiveHtml = await fetchPage(archiveUrl);
-    }
-
-    if (!archiveHtml) continue;
-
-    const $ = cheerio.load(archiveHtml);
-    const links: { url: string; title: string }[] = [];
-
-    // Beehiiv post links contain /p/
-    $('a[href*="/p/"]').each((_, el) => {
-      const href = $(el).attr('href') || '';
-      const text = $(el).text().trim();
-
-      if (text.length > 5) {
-        const fullUrl = href.startsWith('http') ? href : `https://alexandbooks.beehiiv.com${href}`;
-        if (!seenUrls.has(fullUrl)) {
-          seenUrls.add(fullUrl);
-          links.push({ url: fullUrl, title: cleanTitle(text) });
-        }
-      }
-    });
-
-    console.log(`[${config.name}] Found ${links.length} edition links`);
-
-    // Scrape each edition, skip sponsored
-    for (let i = 0; i < links.length && editions.length < MAX_EDITIONS_PER_SOURCE; i++) {
-      const { url, title } = links[i];
-
-      // Skip obvious sponsored posts by title
-      const lowerTitle = title.toLowerCase();
-      if (lowerTitle.includes('sponsor') ||
-          lowerTitle.includes('partner') ||
-          lowerTitle.includes('presented by') ||
-          lowerTitle.includes('brought to you by') ||
-          lowerTitle.includes('[ad]')) {
-        console.log(`[${config.name}] Skipping (sponsored title): ${title.substring(0, 50)}...`);
-        continue;
-      }
-
-      console.log(`[${config.name}] Scraping ${editions.length + 1}: ${title.substring(0, 50)}...`);
-      await sleep(DELAY_BETWEEN_REQUESTS);
-
-      const pageHtml = await fetchPage(url);
-      if (!pageHtml) continue;
-
-      const page$ = cheerio.load(pageHtml);
-
-      // Check for sponsored content markers in page
-      const pageText = page$('body').text().toLowerCase();
-      if (pageText.includes('this post is sponsored') ||
-          pageText.includes('sponsored by') ||
-          pageText.includes('paid partnership') ||
-          pageText.includes('this is a paid advertisement')) {
-        console.log(`[${config.name}] Skipping (sponsored content): ${title.substring(0, 50)}...`);
-        continue;
-      }
-
-      page$('nav, header, footer, .sidebar, script, style, .subscribe-widget').remove();
-
-      const articleHtml = page$('.post-content').html() ||
-                          page$('article').html() ||
-                          page$('.content').html() ||
-                          page$('main').html() || '';
-
-      const articleText = extractText(articleHtml);
-
-      if (articleText.length > 200) {
-        const dateStr = page$('time').attr('datetime') ||
-                       page$('meta[property="article:published_time"]').attr('content');
-
-        let publishedAt = new Date();
-        if (dateStr) {
-          const parsed = new Date(dateStr);
-          if (!isNaN(parsed.getTime())) {
-            publishedAt = parsed;
-          }
-        }
-
-        editions.push({
-          subject: title,
-          url,
-          content: articleText,
-          htmlContent: articleHtml,
-          publishedAt,
-          isSponsored: false,
-        });
-      }
-    }
-
-    await sleep(DELAY_BETWEEN_REQUESTS);
-  }
-
-  console.log(`[${config.name}] Scraped ${editions.length} editions (excluding sponsored)`);
   return editions;
 }
 
@@ -753,9 +690,14 @@ async function scrapeNaval(config: NewsletterConfig): Promise<EditionData[]> {
 
   // Scrape each edition
   let skippedOld = 0;
+  let consecutiveKnown = 0;
   const toScrape = links.slice(0, MAX_EDITIONS_PER_SOURCE);
 
   for (let i = 0; i < toScrape.length; i++) {
+    if (!DEEP_SCAN && consecutiveKnown >= STOP_AFTER_CONSECUTIVE_KNOWN) {
+      console.log(`[${config.name}] Hit ${STOP_AFTER_CONSECUTIVE_KNOWN} already-stored editions in a row - caught up. (Use --deep for a full scan.)`);
+      break;
+    }
     const { url, title } = toScrape[i];
     console.log(`[${config.name}] Scraping ${i + 1}/${toScrape.length}: ${title.substring(0, 50)}...`);
 
@@ -821,6 +763,12 @@ async function scrapeNaval(config: NewsletterConfig): Promise<EditionData[]> {
                      title;
 
     if (articleText.length > 200) {
+      if (await isKnownEdition(url, articleText)) {
+        consecutiveKnown++;
+        continue;
+      }
+      consecutiveKnown = 0;
+
       editions.push({
         subject: cleanTitle(pageTitle),
         url,
@@ -871,16 +819,6 @@ const NEWSLETTERS: NewsletterConfig[] = [
     author: 'Sahil Bloom',
     requiresBrowser: true, // Substack infinite scroll
     scraper: scrapeSahilBloom,
-  },
-  {
-    name: 'Alex and Books',
-    senderEmail: 'alex@alexandbooks.com',
-    website: 'https://alexandbooks.beehiiv.com/',
-    archiveUrl: 'https://alexandbooks.beehiiv.com',
-    category: 'wisdom',
-    author: 'Alex',
-    requiresBrowser: true, // Beehiiv may use JS
-    scraper: scrapeAlexAndBooks,
   },
   {
     name: 'Naval Ravikant',

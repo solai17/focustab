@@ -33,7 +33,7 @@ const anthropic = new Anthropic({
 const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '50', 10);
 const MIN_QUALITY_SCORE = parseFloat(process.env.MIN_QUALITY || '0.6');
 const DRY_RUN = process.env.DRY_RUN === 'true';
-const MODEL = 'claude-sonnet-4-6'; // Claude Sonnet 4.6
+const MODEL = 'claude-sonnet-5'; // Claude Sonnet 5
 
 interface ByteForAudit {
   id: string;
@@ -124,7 +124,8 @@ async function auditBatch(bytes: ByteForAudit[]): Promise<AuditResult[]> {
     try {
       const message = await anthropic.messages.create({
         model: MODEL,
-        max_tokens: 4096,
+        max_tokens: 6144, // headroom for Sonnet 5's tokenizer (~30% more tokens)
+        thinking: { type: 'disabled' }, // response parsed as a raw JSON array from content[0]
         messages: [
           {
             role: 'user',

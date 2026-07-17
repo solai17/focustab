@@ -1,10 +1,9 @@
 # ByteLetters
 
-**Curated wisdom from the world's best newsletters, delivered one byte at a time.**
+**Byte-sized wisdom, every tab.**
 
-ByteLetters is a Chrome extension that transforms your new tab into a source of daily inspiration. Every time you open a new tab, you'll see a carefully curated insight, quote, or takeaway from top newsletters—distilled by AI, voted on by the community.
+ByteLetters is a Chrome extension that turns every new tab into a moment of insight. It curates the world's best newsletters, uses AI to distill each edition into standalone "bytes" of wisdom, and serves you one every time you open a tab — alongside a gentle reminder of how many weeks of life remain to spend well.
 
-[![Chrome Web Store](https://img.shields.io/chrome-web-store/v/YOUR_EXTENSION_ID?style=flat-square)](https://chrome.google.com/webstore/detail/byteletters/YOUR_EXTENSION_ID)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 
 ---
@@ -13,20 +12,22 @@ ByteLetters is a Chrome extension that transforms your new tab into a source of 
 
 ### For Users
 
-- **Curated Content** — Hand-picked newsletters, AI-extracted insights
-- **Sources Screen** — Browse and subscribe to newsletters you love
-- **Mortality Bar** — Visual reminder of your finite time (optional)
-- **Save & Share** — Bookmark insights, copy quotes to clipboard
-- **Community Voting** — Upvote/downvote to surface the best content
-- **Smart Read Tracking** — Never see the same byte twice
+- **Instant new tabs** — bytes render from a locally cached queue; no waiting on the network
+- **Curated library** — hand-picked newsletters (James Clear, Farnam Street, Naval Ravikant, Sahil Bloom), each AI-extracted and quality-audited
+- **Your sources, your feed** — toggle newsletters on/off; the feed updates immediately
+- **Recommend newsletters** — suggest sources (with topic tags) right from the extension
+- **The Ritual** — every tab opens with "Make week #N count" and your remaining weeks
+- **Value streak** — counts bytes actually read (never breaks, only grows), synced live across all open tabs, with milestones ("1,000 bytes ≈ 100 newsletters distilled")
+- **Save & vote** — bookmark the best bytes, upvote/downvote to tune quality
 
-### For Admins
+### For Admins (`/admin.html`)
 
-- **Admin Dashboard** — Full control at `/admin.html`
-- **Newsletter Management** — Add sources, configure archive scraping
-- **Content Moderation** — Approve/reject AI-extracted insights
-- **Scraping Jobs** — Monitor archive scraping status
-- **Forwarded Emails** — Review submissions to `inbox@byteletters.app`
+- **Email/password login** — bcrypt-hashed credentials, admin-only access
+- **Source management** — add/edit/delete newsletters, set scraping schedules
+- **One-click scraping** — incremental, paginated archive scraping runs inside the backend with live job logs; capped runs auto-continue; Deep scan backfills gaps
+- **Scheduled scraping** — per-source daily/weekly schedules, checked hourly
+- **Insight curation** — expandable insight cards, hide/show from users, AI quality audit
+- **Recommendation review** — user-suggested newsletters arrive as drafts (scraping off) for audit before joining the curated list
 
 ---
 
@@ -34,27 +35,45 @@ ByteLetters is a Chrome extension that transforms your new tab into a source of 
 
 ```
 byteletters/
-├── extension/           # Chrome Extension (React + TypeScript)
+├── extension/           # Chrome Extension (React + TypeScript + Vite)
 │   ├── src/
-│   │   ├── components/  # ByteCard, Sources, Settings, Onboarding
-│   │   ├── services/    # API client, auth
-│   │   └── types/       # TypeScript interfaces
+│   │   ├── components/  # ByteCard, MortalityBar (Ritual hero), Sources, Settings, Onboarding
+│   │   ├── services/    # API client, auth (Chrome Identity)
+│   │   ├── data/        # Milestone ladder, offline fallback bytes
+│   │   └── utils/       # Cross-tab storage (streak sync, byte queue)
 │   └── public/          # Manifest, icons
 │
-├── backend/             # API Server (Node.js + Express)
+├── backend/             # API Server (Node.js + Express + Prisma)
 │   ├── src/
-│   │   ├── routes/      # auth, feed, newsletters, admin, webhooks
-│   │   ├── services/    # AI processing, database, scraping
-│   │   └── middleware/  # Auth, rate limiting, security
+│   │   ├── routes/      # auth, feed, newsletters, admin, public, internal
+│   │   ├── services/    # AI extraction (Claude), scraper, scrape scheduler
+│   │   └── middleware/  # JWT auth, rate limiting, security headers
+│   ├── scripts/         # Local Puppeteer scraper, quality audit, admin seed
 │   └── prisma/          # Database schema (PostgreSQL)
 │
-├── cloudflare-worker/   # Email ingestion worker
-│
-├── landing/             # Landing page + admin dashboard
-│   └── admin.html       # Admin dashboard UI
-│
-└── scrapers/            # Newsletter archive scrapers
+└── landing/             # Landing page + admin dashboard (Cloudflare Pages)
+    ├── index.html       # byteletters.app
+    └── admin.html       # Admin dashboard
 ```
+
+---
+
+## How Content Flows
+
+```
+Curated newsletter archives
+        ↓
+Scraper (in-server incremental, or local Puppeteer for JS-heavy sites)
+        ↓
+AI extraction (Claude Sonnet 5) — insights, quotes, takeaways
+        ↓
+AI quality audit — low-quality bytes deleted, the rest scored
+        ↓
+User feed — randomized among top-quality bytes, never repeats,
+            only from sources the user switched on
+```
+
+Users can recommend newsletters from the extension; admins review them as drafts, audit content quality, then enable curation + scheduled scraping.
 
 ---
 
@@ -65,7 +84,7 @@ byteletters/
 ```bash
 cd extension
 npm install
-npm run dev
+npm run build
 ```
 
 Load in Chrome:
@@ -78,26 +97,28 @@ Load in Chrome:
 ```bash
 cd backend
 npm install
-cp .env.example .env  # Configure environment variables
-npx prisma migrate dev
+# Create .env with the variables below
+npx prisma db push
 npm run dev
 ```
 
 ### Environment Variables
 
 ```env
-# Database
 DATABASE_URL="postgresql://user:pass@localhost:5432/byteletters"
+JWT_SECRET="a-long-random-string"        # required in production
+ANTHROPIC_API_KEY="sk-ant-..."           # AI extraction + audit
+INTERNAL_CRON_SECRET="..."               # protects /internal endpoints in production
+```
 
-# Authentication
-JWT_SECRET="your-secure-jwt-secret"
+### Useful Scripts (backend)
 
-# AI Processing
-ANTHROPIC_API_KEY="sk-ant-..."
-GOOGLE_AI_API_KEY="..."
-
-# Email (Cloudflare Workers)
-CLOUDFLARE_WEBHOOK_SECRET="your-webhook-secret"
+```bash
+npm run scrape                 # Full Puppeteer scrape of all curated sources
+npm run scrape -- james        # Scrape one source
+npm run audit                  # AI quality audit of unaudited bytes
+npm run audit:dry              # Audit preview (no deletions)
+ADMIN_PASSWORD=... npm run seed:admin   # Create/reset the admin login
 ```
 
 ---
@@ -106,128 +127,85 @@ CLOUDFLARE_WEBHOOK_SECRET="your-webhook-secret"
 
 | Component | Technology |
 |-----------|------------|
-| Extension | React 18, TypeScript, Vite, TailwindCSS |
+| Extension | React 19, TypeScript, Vite, TailwindCSS |
 | Backend | Node.js, Express, TypeScript, Prisma |
 | Database | PostgreSQL (Supabase) |
-| AI | Claude (Anthropic), Gemini (Google) |
-| Email | Cloudflare Email Workers |
-| Hosting | Railway (API), Cloudflare Pages (Landing) |
-
----
-
-## Key Concepts
-
-### Curated Content Model (v3.0)
-
-ByteLetters operates on a **curated content model**:
-
-1. **Admin-Curated Sources** — Only newsletters marked as `isCurated` appear to users
-2. **Subscription-Based Feed** — Users only see bytes from newsletters they're subscribed to
-3. **Quality Scoring** — AI scores each insight; low-quality content is filtered
-4. **Community Moderation** — Downvoted content is deprioritized
-
-### Content Flow
-
-```
-Newsletter Archive
-       ↓
-   Scraper (Puppeteer)
-       ↓
-   AI Processing (Claude/Gemini)
-       ↓
-   Content Moderation (Admin)
-       ↓
-   User Feed (Extension)
-```
-
-### User Subscription Flow
-
-```
-New User Signs Up
-       ↓
-   Auto-subscribed to all curated newsletters
-       ↓
-   User customizes via Sources screen
-       ↓
-   Feed shows only subscribed sources
-```
+| AI | Claude Sonnet 5 (Anthropic) |
+| Scraping | axios + cheerio (in-server), Puppeteer (local CLI) |
+| Hosting | Render (API), Cloudflare Pages (landing + admin) |
 
 ---
 
 ## API Endpoints
 
+### Public (no auth)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/public/showcase` | GET | Top-performing bytes for the landing page |
+| `/health` | GET | Health check |
+
 ### Authentication
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/auth/google` | POST | Chrome Identity auth |
-| `/auth/me` | GET | Get current user |
+| `/auth/google` | POST | Chrome Identity auth (extension) |
+| `/auth/admin-login` | POST | Email/password admin login |
+| `/auth/me` | GET | Current user |
 | `/auth/profile` | PUT | Update profile |
 
-### Feed
+### Feed (extension)
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/feed/next` | GET | Get next byte for new tab |
-| `/feed/saved` | GET | Get saved bytes |
+| `/feed/next` | GET | Next byte (`?exclude=` for session dedup) |
+| `/feed/stats` | GET | Value-streak counters (today / all-time) |
+| `/feed/saved` | GET | Saved bytes |
 | `/feed/bytes/:id/vote` | POST | Upvote/downvote |
 | `/feed/bytes/:id/view` | POST | Track view + read status |
 | `/feed/bytes/:id/save` | POST | Toggle save |
+| `/feed/recommend-newsletter` | POST | Suggest a newsletter (name, URL, tags) |
 
-### Newsletters (Sources)
+### Newsletters (sources)
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/newsletters` | GET | List curated newsletters |
-| `/newsletters/:id/subscribe` | POST | Subscribe to source |
-| `/newsletters/:id/unsubscribe` | POST | Unsubscribe from source |
+| `/newsletters` | GET | Curated newsletters with live insight counts |
+| `/newsletters/:id/subscribe` | POST | Switch a source on |
+| `/newsletters/:id/unsubscribe` | POST | Switch a source off |
 
-### Admin (Protected)
+### Admin (protected)
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/admin/stats` | GET | Dashboard statistics |
-| `/admin/sources` | GET/POST | Manage newsletter sources |
-| `/admin/insights` | GET | List insights for moderation |
-| `/admin/insights/:id/moderate` | POST | Approve/reject insight |
-| `/admin/scrape/trigger` | POST | Trigger archive scrape |
+| `/admin/sources` | GET/POST/PATCH/DELETE | Manage sources (freshness, schedules) |
+| `/admin/insights` | GET | Insights with visibility/audit filters |
+| `/admin/insights/:id/visibility` | POST | Hide/show an insight |
+| `/admin/scrape/trigger` | POST | Run an incremental scrape (`deep` for full scan) |
+| `/admin/scrape/jobs` | GET | Job history (`/:id` for full logs) |
+| `/admin/recommendations` | GET | User-suggested newsletters |
+| `/admin/recommendations/:id/approve` | POST | Add as draft source |
 
 ---
 
-## Database Schema (v3.0)
+## Database Schema
 
 ### Core Models
+- **User** — auth, profile, admin flag
+- **NewsletterSource** — metadata, curation flag, scraping config + schedule
+- **Edition** — individual newsletter issues (deduped by content hash)
+- **ContentByte** — extracted insights with quality score, audit + visibility flags
+- **UserSubscription** — user ↔ source toggles
+- **UserEngagement** — votes, saves, view counts
+- **ContentHistory** — read tracking (powers dedup + the value streak)
 
-- **User** — Authentication, preferences, admin flag
-- **NewsletterSource** — Newsletter metadata, scraping config
-- **Edition** — Individual newsletter issues
-- **ContentByte** — Extracted insights (the "bytes")
-- **UserSubscription** — User ↔ Source relationships
-- **UserEngagement** — Votes, saves, shares
-- **ContentHistory** — Read tracking
-
-### Admin Models
-
-- **ForwardedEmail** — Emails sent to `inbox@byteletters.app`
-- **ScrapeJob** — Archive scraping job logs
+### Operations Models
+- **NewsletterRecommendation** — user-suggested sources with topic tags
+- **ScrapeJob** — scraping runs with progress logs
 
 ---
 
-## Deployment
+## Support the Project
 
-See [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md) for detailed instructions.
+ByteLetters is free and open source, but the AI extraction, quality audits, and hosting cost real money. If it makes your new tabs wiser:
 
-### Quick Deploy
-
-```bash
-# Backend (Railway)
-cd backend
-railway up
-
-# Run migrations
-npx prisma migrate deploy
-
-# Extension (Chrome Web Store)
-cd extension
-npm run build
-# Upload dist/ to Chrome Developer Dashboard
-```
+☕ **[Buy me a coffee](https://buymeacoffee.com/solai)**
 
 ---
 
@@ -235,9 +213,8 @@ npm run build
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+3. Commit your changes
+4. Open a Pull Request
 
 ---
 
@@ -250,5 +227,5 @@ MIT License — see [LICENSE](LICENSE) for details.
 ## Links
 
 - **Website**: [byteletters.app](https://byteletters.app)
-- **Chrome Extension**: [Chrome Web Store](https://chrome.google.com/webstore/detail/byteletters/YOUR_ID)
 - **Support**: hello@byteletters.app
+- **Buy me a coffee**: [buymeacoffee.com/solai](https://buymeacoffee.com/solai)

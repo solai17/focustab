@@ -1012,7 +1012,9 @@
             </td>
             <td>
               <button class="btn btn-secondary" onclick="editSource('${source.id}')">Edit</button>
-              ${source.archiveUrl ? `<button class="btn btn-primary" onclick="triggerScrape('${source.id}')" ${source.isScrapingNow ? 'disabled' : ''}>Scrape now</button>` : ''}
+              ${source.archiveUrl ? `<button class="btn btn-primary" onclick="triggerScrape('${source.id}', false)" ${source.isScrapingNow ? 'disabled' : ''}>Scrape now</button>
+              <button class="btn btn-secondary" onclick="triggerScrape('${source.id}', true)" ${source.isScrapingNow ? 'disabled' : ''} title="Checks every archive page, ignoring the caught-up shortcut. Use to backfill gaps.">Deep scan</button>` : ''}
+              <button class="btn btn-danger" onclick="deleteSource('${source.id}', '${escapeHtml(source.name).replace(/'/g, "\\'")}')">Delete</button>
             </td>
           </tr>
         `).join('');
@@ -1407,13 +1409,44 @@
       }
     }
 
-    async function triggerScrape(sourceId) {
-      if (!confirm('Start an incremental scrape for this source? Only editions we don\'t already have will be fetched.')) return;
+    async function deleteSource(sourceId, sourceName) {
+      const typed = prompt(
+        `This permanently deletes "${sourceName}" and ALL of its editions and insights.\n` +
+        `User votes and saves on those insights are removed too. This cannot be undone.\n\n` +
+        `Type DELETE to confirm:`
+      );
+      if (typed !== 'DELETE') {
+        if (typed !== null) alert('Deletion cancelled - you must type DELETE exactly.');
+        return;
+      }
+
+      try {
+        const result = await apiCall(`/admin/sources/${sourceId}`, {
+          method: 'DELETE',
+          body: JSON.stringify({ confirm: 'DELETE' }),
+        });
+        if (result.error) {
+          alert(result.error);
+          return;
+        }
+        alert(`Deleted "${result.deleted}" and all its content.`);
+        loadSources();
+        loadStats();
+      } catch (error) {
+        alert('Failed to delete source');
+      }
+    }
+
+    async function triggerScrape(sourceId, deep) {
+      const msg = deep
+        ? 'Deep scan checks EVERY archive page (slower, more requests). Use it to backfill gaps in older content. Start?'
+        : 'Start an incremental scrape? Only editions we don\'t already have will be fetched, and large backlogs continue automatically.';
+      if (!confirm(msg)) return;
 
       try {
         const result = await apiCall('/admin/scrape/trigger', {
           method: 'POST',
-          body: JSON.stringify({ sourceId }),
+          body: JSON.stringify({ sourceId, deep: deep === true }),
         });
         if (result.error) {
           alert(result.error);

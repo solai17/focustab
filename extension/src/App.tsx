@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Settings as SettingsIcon, Bookmark, BookmarkCheck, ChevronDown, ChevronRight, Library } from 'lucide-react';
+import { Settings as SettingsIcon, Bookmark, BookmarkCheck, ChevronDown, ChevronRight, Library, Coffee } from 'lucide-react';
 // Use the new logo from public folder
 const ByteLettersLogo = '/icons/icon128.png';
 import type { UserProfile, ContentByte, VoteValue } from './types';
@@ -886,6 +886,17 @@ function App() {
           >
             <SettingsIcon className="w-5 h-5 text-smoke" />
           </button>
+
+          {/* Buy me a coffee - ByteLetters is free; this keeps it running */}
+          <a
+            href="https://buymeacoffee.com/solai"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-3 rounded-xl bg-slate/50 border border-ash/50 hover:bg-amber/20 hover:border-amber/40 transition-colors group"
+            title="Enjoying ByteLetters? Buy me a coffee ☕"
+          >
+            <Coffee className="w-5 h-5 text-smoke group-hover:text-amber transition-colors" />
+          </a>
         </div>
       </div>
 

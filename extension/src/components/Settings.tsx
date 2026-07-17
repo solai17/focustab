@@ -1,4 +1,4 @@
-import { X, User, Calendar, Trash2 } from 'lucide-react';
+import { X, User, Calendar, Trash2, Coffee } from 'lucide-react';
 import { useState } from 'react';
 import type { UserProfile } from '../types';
 
@@ -95,6 +95,33 @@ export function Settings({ profile, onClose, onUpdate, onReset }: SettingsProps)
               <span className="text-pearl font-mono text-sm w-12 text-right">
                 {lifeExpectancy} yrs
               </span>
+            </div>
+          </div>
+
+          {/* Support the project */}
+          <div className="pt-4 border-t border-ash">
+            <div className="p-4 bg-amber/5 border border-amber/20 rounded-lg">
+              <div className="flex items-start gap-3">
+                <Coffee className="w-5 h-5 text-amber flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <h3 className="text-pearl text-sm font-medium mb-1">
+                    Enjoying ByteLetters?
+                  </h3>
+                  <p className="text-xs text-smoke leading-relaxed mb-3">
+                    It's free and always will be — but the AI and hosting behind
+                    every byte cost real money. A coffee keeps the wisdom flowing.
+                  </p>
+                  <a
+                    href="https://buymeacoffee.com/solai"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-amber/20 hover:bg-amber/30 text-amber text-sm font-medium rounded-lg transition-colors"
+                  >
+                    <Coffee className="w-4 h-4" />
+                    Buy me a coffee
+                  </a>
+                </div>
+              </div>
             </div>
           </div>
 

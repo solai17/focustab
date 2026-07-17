@@ -682,7 +682,7 @@ router.get('/scrape/jobs', async (req: AuthenticatedRequest, res: Response) => {
  */
 router.post('/scrape/trigger', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { sourceId } = req.body;
+    const { sourceId, deep } = req.body;
     const adminId = req.userId!;
 
     if (!sourceId) {
@@ -716,7 +716,7 @@ router.post('/scrape/trigger', async (req: AuthenticatedRequest, res: Response) 
 
     // Run in the background - the job row carries all progress
     setImmediate(() => {
-      runScrapeJob(sourceId, job.id).catch((error) => {
+      runScrapeJob(sourceId, job.id, { deep: deep === true }).catch((error) => {
         console.error('[Admin] Scrape job crashed:', error);
       });
     });
