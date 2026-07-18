@@ -1195,22 +1195,64 @@
       }
     }
 
+    let auditPollTimer = null;
+
     async function triggerAuditInsights() {
       const btn = document.getElementById('audit-insights-btn');
+      if (!confirm('Start an AI quality audit of all unaudited insights?\n\nEach batch of 50 is scored by Claude; insights below the quality bar are permanently removed. This uses AI credits.')) return;
+
       btn.disabled = true;
       btn.textContent = 'Starting audit...';
 
       try {
-        const result = await apiCall('/admin/insights/trigger-audit', {
-          method: 'POST',
-        });
-        alert(`Audit started! ${result.message || 'Check console for progress.'}`);
+        const result = await apiCall('/admin/insights/trigger-audit', { method: 'POST' });
+        if (result.error) {
+          alert(result.error);
+          btn.disabled = false;
+          btn.textContent = 'Audit Unaudited Insights';
+          return;
+        }
+        // Begin polling live status
+        pollAuditStatus();
       } catch (error) {
-        alert('Failed to trigger audit. Run the audit script manually: npm run audit');
-      } finally {
+        alert('Failed to start audit');
         btn.disabled = false;
         btn.textContent = 'Audit Unaudited Insights';
       }
+    }
+
+    async function pollAuditStatus() {
+      const btn = document.getElementById('audit-insights-btn');
+      const countEl = document.getElementById('unaudited-count');
+
+      async function tick() {
+        try {
+          const s = await apiCall('/admin/insights/audit-status');
+          if (s.running) {
+            btn.textContent = `Auditing ${s.processed}/${s.total}...`;
+            countEl.textContent = `kept ${s.kept}, removed ${s.deleted}`;
+          } else {
+            // Finished
+            clearInterval(auditPollTimer);
+            auditPollTimer = null;
+            btn.disabled = false;
+            btn.textContent = 'Audit Unaudited Insights';
+            countEl.textContent = '';
+            alert(s.error ? `Audit failed: ${s.lastMessage}` : s.lastMessage);
+            loadInsights();
+            loadStats();
+          }
+        } catch (error) {
+          clearInterval(auditPollTimer);
+          auditPollTimer = null;
+          btn.disabled = false;
+          btn.textContent = 'Audit Unaudited Insights';
+        }
+      }
+
+      if (auditPollTimer) clearInterval(auditPollTimer);
+      await tick(); // immediate first check
+      auditPollTimer = setInterval(tick, 3000);
     }
 
     let scrapePollTimer = null;

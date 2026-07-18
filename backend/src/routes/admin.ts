@@ -10,6 +10,7 @@ import { prisma } from '../services/db';
 import { authenticateToken } from '../middleware/auth';
 import { AuthenticatedRequest } from '../types';
 import { runScrapeJob, isSourceScraping } from '../services/scraper';
+import { runAuditJob, getAuditStatus, isAuditRunning } from '../services/auditor';
 
 const router = Router();
 
@@ -513,23 +514,45 @@ router.post('/insights/:id/visibility', async (req: AuthenticatedRequest, res: R
 
 /**
  * POST /admin/insights/trigger-audit
- * Inform admin to run the audit script
+ * Start an AI quality audit of unaudited insights, running inside the server.
+ * Progress is available at GET /admin/insights/audit-status.
  */
 router.post('/insights/trigger-audit', async (req: AuthenticatedRequest, res: Response) => {
   try {
+    if (isAuditRunning()) {
+      return res.status(409).json({ error: 'An audit is already running' });
+    }
+
     const unauditedCount = await prisma.contentByte.count({
       where: { isAudited: false },
+    });
+
+    if (unauditedCount === 0) {
+      return res.json({ success: true, message: 'Nothing to audit - all insights are already audited.' });
+    }
+
+    // Run in the background - the status object carries all progress
+    setImmediate(() => {
+      runAuditJob().catch((error) => console.error('[Admin] Audit job crashed:', error));
     });
 
     res.json({
       success: true,
       unauditedCount,
-      message: `Found ${unauditedCount} unaudited insights. Run 'npm run audit' in the backend folder to process them.`,
+      message: `Auditing ${unauditedCount} insights now. Watch progress here - low-quality ones are removed automatically.`,
     });
   } catch (error) {
     console.error('[Admin] Trigger audit error:', error);
-    res.status(500).json({ error: 'Failed to check unaudited count' });
+    res.status(500).json({ error: 'Failed to start audit' });
   }
+});
+
+/**
+ * GET /admin/insights/audit-status
+ * Live progress of the current/last audit run (polled by the admin portal).
+ */
+router.get('/insights/audit-status', async (req: AuthenticatedRequest, res: Response) => {
+  res.json(getAuditStatus());
 });
 
 /**
