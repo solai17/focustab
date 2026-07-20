@@ -103,6 +103,7 @@ export interface AuthUser {
   birthDate?: string;
   lifeExpectancy?: number;
   enableRecommendations?: boolean;
+  onboardingCompleted?: boolean;
 }
 
 export interface AuthState {

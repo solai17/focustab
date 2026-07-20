@@ -83,6 +83,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
       lifeExpectancy: 80,
       enableRecommendations: true,
       createdAt: new Date().toISOString(),
+      onboardingCompleted: true,
     };
     onComplete(profile);
   };

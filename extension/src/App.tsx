@@ -40,11 +40,20 @@ import { Sources } from './components/Sources';
 function userToProfile(user: AuthUser): UserProfile {
   return {
     name: user.name,
-    birthDate: user.birthDate || new Date().toISOString().split('T')[0],
+    // Do NOT fabricate a birth date - an onboarded user always has a real one,
+    // and a non-onboarded user must never render the app anyway (gated below).
+    birthDate: user.birthDate || '',
     lifeExpectancy: user.lifeExpectancy || 80,
     enableRecommendations: user.enableRecommendations ?? true,
     createdAt: new Date().toISOString(),
+    onboardingCompleted: user.onboardingCompleted ?? false,
   };
+}
+
+// A profile only counts as "ready to show bytes" once onboarding is genuinely
+// finished (explicit name + real birth date).
+function isOnboarded(profile: UserProfile | null): profile is UserProfile {
+  return !!profile && !!profile.onboardingCompleted && !!profile.birthDate;
 }
 
 
@@ -341,7 +350,7 @@ function App() {
         }
 
         let renderedFromCache = false;
-        if (cachedProfile && Array.isArray(cachedQueue) && cachedQueue.length > 0) {
+        if (isOnboarded(cachedProfile) && Array.isArray(cachedQueue) && cachedQueue.length > 0) {
           byteQueueRef.current = cachedQueue;
           const firstByte = byteQueueRef.current.shift()!;
           persistQueue();
@@ -358,6 +367,17 @@ function App() {
 
         if (authState.isAuthenticated && authState.user) {
           const userProfile = userToProfile(authState.user);
+
+          // Authenticated but onboarding not finished (e.g. the account exists
+          // from a silent pre-onboarding auth, but no real name/birth date yet).
+          // Do NOT show bytes - force onboarding to complete first.
+          if (!isOnboarded(userProfile)) {
+            setProfile(null);
+            setCurrentByte(null);
+            setIsLoading(false);
+            return;
+          }
+
           await saveUserProfile(userProfile);
           setProfile(userProfile);
           usingMockData.current = false;
@@ -391,14 +411,14 @@ function App() {
         if (chromeIdentity) {
           // Try to silently authenticate to check if user exists
           try {
-            const { user, isNewUser } = await authenticateWithGoogle(
+            const { user } = await authenticateWithGoogle(
               chromeIdentity.email,
               chromeIdentity.id
             );
 
-            if (!isNewUser && user.birthDate) {
+            const userProfile = userToProfile(user);
+            if (isOnboarded(userProfile)) {
               // Existing user with completed onboarding - auto-login
-              const userProfile = userToProfile(user);
               await saveUserProfile(userProfile);
               setProfile(userProfile);
               usingMockData.current = false;
@@ -428,15 +448,18 @@ function App() {
         // Keep the cached view rather than downgrading to demo content
         if (renderedFromCache) return;
 
-        // Fall back to local profile (legacy/offline mode)
-        setProfile(cachedProfile);
-
-        if (cachedProfile) {
+        // Fall back to local profile (legacy/offline mode) - but only if the
+        // cached profile represents a genuinely onboarded user. A non-onboarded
+        // (or absent) profile must land on onboarding, never on bytes.
+        if (isOnboarded(cachedProfile)) {
+          setProfile(cachedProfile);
           // Use mock data for offline/demo mode
           usingMockData.current = true;
           const byte = getNextMockByte();
           setCurrentByte(byte);
           setQueueSize(SAMPLE_BYTES.length);
+        } else {
+          setProfile(null);
         }
       } catch (error) {
         console.error('Failed to load data:', error);
@@ -810,8 +833,8 @@ function App() {
     );
   }
 
-  // Onboarding
-  if (!profile) {
+  // Onboarding - never show bytes until onboarding is genuinely complete
+  if (!isOnboarded(profile)) {
     return <Onboarding onComplete={handleOnboardingComplete} />;
   }
 
