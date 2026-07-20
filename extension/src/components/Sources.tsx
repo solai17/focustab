@@ -35,7 +35,7 @@ const MAX_TAGS = 3;
 // Cache the newsletter list so the modal renders instantly on open
 const SOURCES_CACHE_KEY = 'byteletters_sources_cache';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://antletters-api.onrender.com';
+const API_URL = import.meta.env.VITE_API_URL || 'https://api.byteletters.app';
 
 export function Sources({ onClose }: SourcesProps) {
   const [newsletters, setNewsletters] = useState<Newsletter[]>([]);
