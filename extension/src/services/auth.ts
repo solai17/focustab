@@ -27,12 +27,20 @@ declare const chrome: {
 // API Configuration
 // Production URL as fallback - override with VITE_API_URL for local development
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://api.byteletters.app';
-const API_TIMEOUT_MS = 10000; // 10 second timeout for API calls
+const API_TIMEOUT_MS = 10000; // 10 second timeout for regular API calls
+// Render's free tier sleeps after ~15 min idle and can take 30-60s to wake.
+// Calls that happen at "first request" time (account creation) need a longer
+// budget and a retry, or a cold start hard-fails onboarding with "Failed to fetch".
+const COLD_START_TIMEOUT_MS = 30000;
 
-// Helper to fetch with timeout
-async function fetchWithTimeout(url: string, options: RequestInit = {}): Promise<Response> {
+// Helper to fetch with a per-call timeout
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs: number = API_TIMEOUT_MS
+): Promise<Response> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url, {
@@ -43,6 +51,42 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}): Promise
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+/**
+ * Like fetchWithTimeout, but retries on transient failures (network errors,
+ * timeouts, and 5xx / 502-503 cold-start responses from Render). Used for the
+ * account-creation call, which is often the very first request that has to wake
+ * a sleeping free-tier backend.
+ */
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit = {},
+  { attempts = 3, timeoutMs = COLD_START_TIMEOUT_MS }: { attempts?: number; timeoutMs?: number } = {}
+): Promise<Response> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const response = await fetchWithTimeout(url, options, timeoutMs);
+      // 502/503/504 are classic "backend still waking" responses - retry them.
+      if (response.status === 502 || response.status === 503 || response.status === 504) {
+        lastError = new Error(`Server waking (HTTP ${response.status})`);
+      } else {
+        return response;
+      }
+    } catch (error) {
+      // TypeError "Failed to fetch" or an AbortError (timeout) - both retryable.
+      lastError = error;
+    }
+
+    // Backoff before the next attempt (skip the wait after the final attempt).
+    if (attempt < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Network request failed');
 }
 
 // Storage keys
@@ -115,7 +159,7 @@ export async function authenticateWithGoogle(
   googleId: string,
   profileData?: { name?: string; birthDate?: string; lifeExpectancy?: number; enableRecommendations?: boolean }
 ): Promise<{ user: AuthUser; token: string; isNewUser: boolean }> {
-  const response = await fetchWithTimeout(`${API_BASE_URL}/auth/google`, {
+  const response = await fetchWithRetry(`${API_BASE_URL}/auth/google`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -128,7 +172,7 @@ export async function authenticateWithGoogle(
   });
 
   if (!response.ok) {
-    const error = await response.json();
+    const error = await response.json().catch(() => ({ error: 'Authentication failed' }));
     throw new Error(error.error || 'Authentication failed');
   }
 

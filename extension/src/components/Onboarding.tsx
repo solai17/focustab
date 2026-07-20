@@ -62,7 +62,15 @@ export function Onboarding({ onComplete }: OnboardingProps) {
       setStep(3);
     } catch (err) {
       console.error('Account creation error:', err);
-      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+      const raw = err instanceof Error ? err.message : '';
+      // "Failed to fetch" / aborted timeouts mean we couldn't reach the server
+      // (often a cold backend). Give a human message instead of the raw error.
+      const isNetwork = /failed to fetch|aborted|network|waking/i.test(raw);
+      setError(
+        isNetwork
+          ? "Couldn't reach the server - it may be waking up. Please tap Continue again in a few seconds."
+          : raw || 'Something went wrong. Please try again.'
+      );
     } finally {
       setIsCreatingAccount(false);
     }
