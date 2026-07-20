@@ -8,6 +8,10 @@ export interface UserProfile {
   lifeExpectancy: number;
   enableRecommendations: boolean;
   createdAt: string;
+  // True only once the user has explicitly finished onboarding (entered their
+  // name + birth date). Bytes are never shown until this is true. Optional for
+  // backwards-compat with profiles stored before this field existed.
+  onboardingCompleted?: boolean;
 }
 
 // =============================================================================

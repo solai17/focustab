@@ -90,9 +90,17 @@ export async function getUserProfile(): Promise<UserProfile | null> {
 
   // Add default values for new fields (backwards compatibility)
   if (profile) {
+    // Legacy profiles (saved before onboardingCompleted existed) don't carry the
+    // flag. Infer it: a real onboarded profile has a birth date that isn't the
+    // "today" placeholder the old silent-auth bug fabricated. Missing birthDate
+    // or birthDate === today means onboarding was never genuinely completed.
+    const today = new Date().toISOString().split('T')[0];
+    const looksOnboarded = !!profile.birthDate && profile.birthDate !== today;
+
     return {
       ...profile,
       enableRecommendations: profile.enableRecommendations ?? true,
+      onboardingCompleted: profile.onboardingCompleted ?? looksOnboarded,
     };
   }
 
