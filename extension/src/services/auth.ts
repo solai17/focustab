@@ -26,7 +26,7 @@ declare const chrome: {
 
 // API Configuration
 // Production URL as fallback - override with VITE_API_URL for local development
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://antletters-api.onrender.com';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://api.byteletters.app';
 const API_TIMEOUT_MS = 10000; // 10 second timeout for API calls
 
 // Helper to fetch with timeout

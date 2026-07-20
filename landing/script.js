@@ -7,7 +7,7 @@
 // Configuration
 // =============================================================================
 
-const API_BASE_URL = 'https://antletters-api.onrender.com'; // Production API
+const API_BASE_URL = 'https://api.byteletters.app'; // Production API
 const FALLBACK_API_URL = 'http://localhost:3000'; // Local dev
 const COOKIE_CONSENT_KEY = 'byteletters_cookie_consent';
 const BYTE_ROTATE_INTERVAL = 20000; // 20 seconds
