@@ -508,6 +508,7 @@ async function getCuratedFeed(
     where: {
       id: { notIn: excludeIds },
       isHidden: false, // Never serve admin-hidden content
+      isAudited: true, // Only serve quality-audited insights
       edition: {
         sourceId: { in: sourceIds },
         source: { isCurated: true }, // Only from curated sources
@@ -572,6 +573,7 @@ async function getPopularFeed(
     where: {
       id: { notIn: excludeIds },
       isHidden: false,
+      isAudited: true, // Only serve quality-audited insights
       moderationStatus: { not: 'rejected' }, // Don't show rejected content
     },
     include: {
@@ -606,6 +608,7 @@ async function getTrendingFeed(
     where: {
       id: { notIn: excludeIds },
       isHidden: false,
+      isAudited: true, // Only serve quality-audited insights
       createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }, // Last 24h
       ...(cursor && { trendingScore: { lt: parseFloat(cursor) } }),
     },
@@ -640,6 +643,7 @@ async function getSubscribedFeed(
     where: {
       id: { notIn: excludeIds },
       isHidden: false,
+      isAudited: true, // Only serve quality-audited insights
       edition: { sourceId: { in: sourceIds } },
       ...(cursor && { createdAt: { lt: new Date(cursor) } }),
     },
@@ -662,6 +666,7 @@ async function getNewFeed(
     where: {
       id: { notIn: excludeIds },
       isHidden: false,
+      isAudited: true, // Only serve quality-audited insights
       ...(cursor && { createdAt: { lt: new Date(cursor) } }),
     },
     include: {
@@ -694,6 +699,7 @@ async function getPersonalizedFeed(
     where: {
       id: { notIn: excludeIds },
       isHidden: false,
+      isAudited: true, // Only serve quality-audited insights
       // Only show sponsored if user enabled recommendations
       ...(enableRecommendations ? {} : { isSponsored: false }),
     },
@@ -785,6 +791,7 @@ async function getQueueSize(userId: string, seenByteIds: string[], sourceIds?: s
   const where: any = {
     id: { notIn: seenByteIds },
     isHidden: false,
+    isAudited: true, // Match the feed - only count audited insights
     moderationStatus: { not: 'rejected' },
   };
 
