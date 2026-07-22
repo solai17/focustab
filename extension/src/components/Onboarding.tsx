@@ -68,7 +68,7 @@ export function Onboarding({ onComplete }: OnboardingProps) {
       const isNetwork = /failed to fetch|aborted|network|waking/i.test(raw);
       setError(
         isNetwork
-          ? "Couldn't reach the server - it may be waking up. Please tap Continue again in a few seconds."
+          ? `Couldn't reach the server - please tap Continue to retry. (${raw || 'network error'})`
           : raw || 'Something went wrong. Please try again.'
       );
     } finally {
