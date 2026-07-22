@@ -35,7 +35,10 @@ const MAX_TAGS = 3;
 // Cache the newsletter list so the modal renders instantly on open
 const SOURCES_CACHE_KEY = 'byteletters_sources_cache';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://api.byteletters.app';
+// Production builds always use the production API (see services/auth.ts)
+const API_URL = import.meta.env.PROD
+  ? 'https://api.byteletters.app'
+  : (import.meta.env.VITE_API_URL || 'https://api.byteletters.app');
 
 export function Sources({ onClose }: SourcesProps) {
   const [newsletters, setNewsletters] = useState<Newsletter[]>([]);

@@ -25,8 +25,14 @@ declare const chrome: {
 } | undefined;
 
 // API Configuration
-// Production URL as fallback - override with VITE_API_URL for local development
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://api.byteletters.app';
+// Production builds ALWAYS use the production API. A stray local .env
+// (VITE_API_URL=http://localhost:3000) must never leak into a store build -
+// that would make every install fail with "failed to fetch". VITE_API_URL
+// is honored only in dev mode (npm run dev).
+const PRODUCTION_API_URL = 'https://api.byteletters.app';
+const API_BASE_URL = import.meta.env.PROD
+  ? PRODUCTION_API_URL
+  : (import.meta.env.VITE_API_URL || PRODUCTION_API_URL);
 const API_TIMEOUT_MS = 10000; // 10 second timeout for regular API calls
 // Render's free tier sleeps after ~15 min idle and can take 30-60s to wake.
 // Calls that happen at "first request" time (account creation) need a longer
