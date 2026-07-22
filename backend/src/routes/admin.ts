@@ -955,4 +955,188 @@ router.post('/cleanup/users', async (req: AuthenticatedRequest, res: Response) =
   }
 });
 
+// =============================================================================
+// USER ANALYTICS (Users tab / BI dashboard)
+// =============================================================================
+
+/**
+ * GET /admin/users/growth
+ * Signup and activity analytics: summary counts for standard windows plus
+ * day-bucketed time series the dashboard can aggregate into weekly/monthly
+ * views. Series are bucketed server-side so the payload stays small.
+ */
+router.get('/users/growth', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const now = new Date();
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const since = (days: number) => new Date(now.getTime() - days * DAY_MS);
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    const [
+      total,
+      onboarded,
+      signedUpToday,
+      thisWeek,
+      thisMonth,
+      last3Months,
+      last6Months,
+      activeUserIds,
+    ] = await Promise.all([
+      prisma.user.count(),
+      prisma.user.count({ where: { onboardingCompleted: true } }),
+      prisma.user.count({ where: { createdAt: { gte: startOfToday } } }),
+      prisma.user.count({ where: { createdAt: { gte: since(7) } } }),
+      prisma.user.count({ where: { createdAt: { gte: since(30) } } }),
+      prisma.user.count({ where: { createdAt: { gte: since(90) } } }),
+      prisma.user.count({ where: { createdAt: { gte: since(180) } } }),
+      prisma.contentHistory.findMany({
+        where: { shownAt: { gte: since(7) } },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
+    ]);
+
+    // Day-bucket helper (UTC dates keep buckets stable across timezones)
+    const toDay = (d: Date) => d.toISOString().slice(0, 10);
+    const bucket = (dates: Date[]) => {
+      const map = new Map<string, number>();
+      for (const d of dates) {
+        const key = toDay(d);
+        map.set(key, (map.get(key) || 0) + 1);
+      }
+      return [...map.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, count]) => ({ date, count }));
+    };
+
+    // All signup dates (small: one Date per user) -> daily series since launch
+    const signupRows = await prisma.user.findMany({
+      select: { createdAt: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    // Bytes viewed per day over the last 30 days (engagement pulse)
+    const viewRows = await prisma.contentHistory.findMany({
+      where: { shownAt: { gte: since(30) } },
+      select: { shownAt: true },
+    });
+
+    res.json({
+      summary: {
+        total,
+        onboarded,
+        today: signedUpToday,
+        thisWeek,
+        thisMonth,
+        last3Months,
+        last6Months,
+        activeLast7Days: activeUserIds.length,
+      },
+      signupsByDay: bucket(signupRows.map((r) => r.createdAt)),
+      viewsByDay: bucket(viewRows.map((r) => r.shownAt)),
+    });
+  } catch (error) {
+    console.error('[Admin] Users growth error:', error);
+    res.status(500).json({ error: 'Failed to load user growth' });
+  }
+});
+
+/**
+ * GET /admin/users
+ * Paginated user list with per-user engagement insights.
+ * Query: page (1-based), limit, search (matches email or name)
+ */
+router.get('/users', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const page = Math.max(1, parseInt(String(req.query.page || '1'), 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || '25'), 10) || 25));
+    const search = String(req.query.search || '').trim();
+
+    const where = search
+      ? {
+          OR: [
+            { email: { contains: search, mode: 'insensitive' as const } },
+            { name: { contains: search, mode: 'insensitive' as const } },
+          ],
+        }
+      : {};
+
+    const [users, totalCount] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          createdAt: true,
+          onboardingCompleted: true,
+          isAdmin: true,
+          _count: {
+            select: {
+              contentHistory: true,
+              subscriptions: { where: { isActive: true } },
+            },
+          },
+        },
+      }),
+      prisma.user.count({ where }),
+    ]);
+
+    // Per-user aggregates for just this page of users
+    const userIds = users.map((u) => u.id);
+    const [activity, reads, saves] = userIds.length
+      ? await Promise.all([
+          // Last-active = most recent byte shown
+          prisma.contentHistory.groupBy({
+            by: ['userId'],
+            where: { userId: { in: userIds } },
+            _max: { shownAt: true },
+          }),
+          prisma.contentHistory.groupBy({
+            by: ['userId'],
+            where: { userId: { in: userIds }, isRead: true },
+            _count: { _all: true },
+          }),
+          prisma.userEngagement.groupBy({
+            by: ['userId'],
+            where: { userId: { in: userIds }, isSaved: true },
+            _count: { _all: true },
+          }),
+        ])
+      : [[], [], []];
+
+    const lastActiveMap = new Map(activity.map((a) => [a.userId, a._max.shownAt]));
+    const readsMap = new Map(reads.map((r) => [r.userId, r._count._all]));
+    const savesMap = new Map(saves.map((s) => [s.userId, s._count._all]));
+
+    res.json({
+      users: users.map((u) => ({
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        createdAt: u.createdAt,
+        onboardingCompleted: u.onboardingCompleted,
+        isAdmin: u.isAdmin,
+        bytesSeen: u._count.contentHistory,
+        bytesRead: readsMap.get(u.id) || 0,
+        savedBytes: savesMap.get(u.id) || 0,
+        subscriptions: u._count.subscriptions,
+        lastActiveAt: lastActiveMap.get(u.id) || null,
+      })),
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages: Math.max(1, Math.ceil(totalCount / limit)),
+      },
+    });
+  } catch (error) {
+    console.error('[Admin] Users list error:', error);
+    res.status(500).json({ error: 'Failed to load users' });
+  }
+});
+
 export default router;
