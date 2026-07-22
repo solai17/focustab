@@ -8,6 +8,9 @@
     "identity",
     "identity.email"
   ],
+  "host_permissions": [
+    "https://api.byteletters.app/*"
+  ],
   "oauth2": {
     "client_id": "147274471196-69l58eiuh9f7esmuk4deccjlg2ln2d6m.apps.googleusercontent.com",
     "scopes": [
