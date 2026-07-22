@@ -1265,13 +1265,28 @@
 
     async function loadUserGrowth() {
       try {
-        growthData = await apiCall('/admin/users/growth');
+        const resp = await fetch(`${API_URL}/admin/users/growth`, {
+          headers: { 'Authorization': `Bearer ${authToken}` },
+        });
+        if (resp.status === 401 || resp.status === 403) { logout(); return; }
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          const hint = resp.status === 404
+            ? 'The API is running an older build without this endpoint. Wait for the Render deploy of the latest main to finish, then refresh.'
+            : (data.error || 'Server error');
+          throw new Error(`HTTP ${resp.status} - ${hint}`);
+        }
+        growthData = data;
         renderUserStats(growthData.summary);
         renderGrowthChart();
         renderActivityChart();
       } catch (error) {
-        document.getElementById('users-stats-grid').innerHTML =
-          '<div class="empty-state">Failed to load user stats</div>';
+        const msg = escapeHtml(error.message || 'Failed to load');
+        const errBox = `<div class="empty-state" style="padding: 2rem;">Failed to load user stats<br>
+          <span style="font-size: 0.8rem; color: var(--smoke);">${msg}</span></div>`;
+        document.getElementById('users-stats-grid').innerHTML = errBox;
+        document.getElementById('growth-chart').innerHTML = errBox;
+        document.getElementById('activity-chart').innerHTML = errBox;
       }
     }
 
@@ -1482,7 +1497,14 @@
       try {
         const params = new URLSearchParams({ page: String(page), limit: '25' });
         if (search) params.set('search', search);
-        const data = await apiCall(`/admin/users?${params}`);
+        const resp = await fetch(`${API_URL}/admin/users?${params}`, {
+          headers: { 'Authorization': `Bearer ${authToken}` },
+        });
+        if (resp.status === 401 || resp.status === 403) { logout(); return; }
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status} - ${data.error || 'Server error'}`);
+        }
 
         if (!data.users || data.users.length === 0) {
           tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No users found</td></tr>';
@@ -1512,7 +1534,8 @@
           <button class="btn btn-secondary" ${p.page >= p.totalPages ? 'disabled' : ''} onclick="loadUsersList(${p.page + 1})">Next</button>
         `;
       } catch (error) {
-        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Failed to load users</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="8" class="empty-state">Failed to load users<br>
+          <span style="font-size: 0.8rem; color: var(--smoke);">${escapeHtml(error.message || '')}</span></td></tr>`;
       }
     }
 
